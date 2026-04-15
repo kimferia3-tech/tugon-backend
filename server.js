@@ -18,10 +18,10 @@ const io = new Server(server, {
 // --- 1. DATABASE CONFIGURATION (RENDER VERSION) ---
 // Ginagamit ang External Database URL mula sa Render
 const pool = new Pool({
-    connectionString: 'postgres://admin:YvYg6LhUo0WkY56L423377S9Dq2W6697@dpg-cvf8gtt6l47c739b6990-a.singapore-postgres.render.com/tugon_db',
-    ssl: {
-        rejectUnauthorized: false // Required ito para sa cloud databases tulad ng Render
-    }
+  connectionString: process.env.DATABASE_URL,
+  ssl: {
+    rejectUnauthorized: false
+  }
 });
 
 pool.connect((err, client, release) => {
