@@ -14,7 +14,6 @@ const io = new Server(server, {
         methods: ["GET", "POST"]
     }
 });
-
 // --- 1. DATABASE CONFIGURATION (RENDER VERSION) ---
 // Ginagamit ang External Database URL mula sa Render
 const pool = new Pool({
