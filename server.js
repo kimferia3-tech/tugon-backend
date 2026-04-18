@@ -18,14 +18,24 @@ const io = new Server(server, {
 
 // --- 1. DATABASE CONFIGURATION ---
 const pool = new Pool({
-    connectionString: 'postgres://admin:YvYg6LhUo0WkY56L423377S9Dq2W6697@dpg-cvf8gtt6l47c739b6990-a.singapore-postgres.render.com/tugon_db',
+    connectionString: 'postgres://admin:YvYg6LhUo0Wky56L423377S9Dq2W6697@dpg-cvf8gtt6147c739b6990-a.singapore-postgres.render.com/tugon_db',
     ssl: {
         rejectUnauthorized: false 
-    }
+    },
+    max: 10,
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 10000,
+});
+
+// Mas maayos na error handling para sa connection
+pool.on('error', (err) => {
+    console.error('Unexpected error on idle database client', err);
 });
 
 pool.connect((err, client, release) => {
-    if (err) return console.error('Error connecting to database:', err.stack);
+    if (err) {
+        return console.error('Error connecting to database:', err.stack);
+    }
     console.log('Successfully connected to Render PostgreSQL!');
     release();
 });
