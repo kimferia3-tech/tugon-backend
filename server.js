@@ -16,9 +16,10 @@ const io = new Server(server, {
     }
 });
 
-// --- 1. DATABASE CONFIGURATION ---
 const pool = new Pool({
-    connectionString: 'postgres://admin:YvYg6LhUo0Wky56L423377S9Dq2W6697@dpg-cvf8gtt6147c739b6990-a.singapore-postgres.render.com/tugon_db',
+    // Gamitin ang Internal Database URL mo rito:
+    connectionString: 'postgresql://tugondb_user:dlVoDAJvrcccEseW7BujbPdhJtqq96Lz@dpg-d7fq3hf7f7vs73a7s5a0-a/tugondb', 
+  
     ssl: {
         rejectUnauthorized: false 
     },
@@ -26,7 +27,6 @@ const pool = new Pool({
     idleTimeoutMillis: 30000,
     connectionTimeoutMillis: 10000,
 });
-
 // Mas maayos na error handling para sa connection
 pool.on('error', (err) => {
     console.error('Unexpected error on idle database client', err);
