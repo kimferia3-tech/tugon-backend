@@ -5,21 +5,22 @@ const cors = require('cors');
 const http = require('http'); 
 const { Server } = require('socket.io');
 const multer = require('multer');
-const bcrypt = require('bcryptjs'); // <--- ITO LANG ANG NADAGDAG SA TAAS
+const bcrypt = require('bcryptjs');
 
 const app = express();
 const server = http.createServer(app); 
+
+// --- 1. SOCKET.IO CONFIGURATION (FIXED CORS) ---
 const io = new Server(server, {
     cors: { 
-        origin: "https://www.tugonph.com", 
-        methods: ["GET", "POST"]
+        origin: ["https://www.tugonph.com", "https://tugonph.com"], 
+        methods: ["GET", "POST"],
+        credentials: true
     }
 });
 
 const pool = new Pool({
-    // Gamitin ang Internal Database URL mo rito:
-    connectionString: 'postgresql://tugondb_user:dlVoDAJvrcccEseW7BujbPdhJtqq96Lz@dpg-d7fq3hf7f7vs73a7s5a0-a/tugondb', 
-  
+    connectionString: 'postgresql://tugondb_user:dlVoDAJvrcccEseW7BujbPdhJtqq96Lz@dpg-d7fq3hf7f7vs73a7s5a0-a/tugondb',  
     ssl: {
         rejectUnauthorized: false 
     },
@@ -27,7 +28,7 @@ const pool = new Pool({
     idleTimeoutMillis: 30000,
     connectionTimeoutMillis: 10000,
 });
-// Mas maayos na error handling para sa connection
+
 pool.on('error', (err) => {
     console.error('Unexpected error on idle database client', err);
 });
@@ -49,13 +50,16 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage: storage });
 
-// --- 3. MIDDLEWARES ---
-app.use(cors({ origin: "https://www.tugonph.com" })); 
+// --- 3. MIDDLEWARES (FIXED CORS) ---
+app.use(cors({ 
+    origin: ["https://www.tugonph.com", "https://tugonph.com"],
+    credentials: true 
+})); 
 app.use(express.json());
 app.use(express.static(__dirname)); 
 app.use('/uploads', express.static('uploads'));
 
-// --- 4. SOCKET.IO CHAT LOGIC (WALANG BINAGO RITO) ---
+// --- 4. SOCKET.IO CHAT LOGIC ---
 io.on('connection', (socket) => {
     console.log('User connected:', socket.id);
 
@@ -90,13 +94,11 @@ io.on('connection', (socket) => {
     socket.on('disconnect', () => { console.log('User disconnected'); });
 });
 
-// --- 5. AUTHENTICATION ROUTES (ITO LANG ANG IN-UPDATE PARA SA LOGIN BUG) ---
+// --- 5. AUTHENTICATION ROUTES ---
 app.post('/signup', async (req, res) => {
     const { fullname, email, password } = req.body;
     try {
-        // I-hash ang password bago i-save para safe
         const hashedPassword = await bcrypt.hash(password, 10);
-        
         const result = await pool.query(
             'INSERT INTO users(fullname, email, password) VALUES($1, $2, $3) RETURNING *', 
             [fullname, email, hashedPassword] 
@@ -111,12 +113,9 @@ app.post('/login', async (req, res) => {
     const { email, password } = req.body;
     try {
         const result = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
-        
         if (result.rows.length > 0) {
             const user = result.rows[0];
-            // I-compare ang plain text password sa hashed password sa DB
             const isMatch = await bcrypt.compare(password, user.password);
-            
             if (isMatch) {
                 res.status(200).json({ message: "Login successful", user: user });
             } else {
@@ -130,7 +129,7 @@ app.post('/login', async (req, res) => {
     }
 });
 
-// --- 6. PROGRAM SUBMISSION (WALANG BINAGO RITO) ---
+// --- 6. PROGRAM SUBMISSION ---
 app.post('/submit-program', upload.fields([
     { name: 'doc_coe', maxCount: 1 },
     { name: 'doc_indigency', maxCount: 1 },
@@ -181,7 +180,7 @@ app.post('/submit-program', upload.fields([
     }
 });
 
-// --- 7. ADMIN & USER DATA ROUTES (WALANG BINAGO RITO) ---
+// --- 7. ADMIN & USER DATA ROUTES ---
 app.get('/applications', async (req, res) => {
     try {
         const result = await pool.query("SELECT *, TO_CHAR(submitted_at, 'Mon DD, YYYY') as date FROM submitted_programs ORDER BY submitted_at DESC");
@@ -218,6 +217,7 @@ app.get('/notifications', async (req, res) => {
         res.status(200).json(result.rows);
     } catch (err) { res.status(500).json({ error: "Error" }); }
 });
+
 // --- 8. START SERVER ---
 const PORT = process.env.PORT || 3000; 
 server.listen(PORT, () => { console.log(`Server running on port ${PORT}`); });
