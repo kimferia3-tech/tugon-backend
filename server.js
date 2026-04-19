@@ -14,7 +14,7 @@ const server = http.createServer(app);
 const io = new Server(server, {
     cors: { 
         origin: ["https://www.tugonph.com", "https://tugonph.com"], 
-        methods: ["GET", "POST"],
+        methods: ["GET", "POST", "PATCH"], // Dinagdagan ko ng PATCH
         credentials: true
     }
 });
@@ -45,6 +45,7 @@ const upload = multer({ storage: storage });
 // --- 3. MIDDLEWARES ---
 app.use(cors({ 
     origin: ["https://www.tugonph.com", "https://tugonph.com"],
+    methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"], // Siguradong payado lahat
     credentials: true 
 })); 
 app.use(express.json());
@@ -127,7 +128,7 @@ app.post('/login', async (req, res) => {
     } catch (err) { res.status(500).json({ error: "Server Error" }); }
 });
 
-// --- 6. PROGRAM SUBMISSION (FIXED FOR DB COLUMNS) ---
+// --- 6. PROGRAM SUBMISSION ---
 app.post('/submit-program', upload.fields([
     { name: 'doc_coe', maxCount: 1 },
     { name: 'doc_indigency', maxCount: 1 },
@@ -140,14 +141,12 @@ app.post('/submit-program', upload.fields([
         mobile_number, email, gcash, school_name, year_level, course, status 
     } = req.body;
 
-    // Kunin ang filenames mula sa multer
     const file_coe = req.files['doc_coe'] ? req.files['doc_coe'][0].filename : null;
     const file_indigency = req.files['doc_indigency'] ? req.files['doc_indigency'][0].filename : null;
     const file_school_id = req.files['doc_school_id'] ? req.files['doc_school_id'][0].filename : null;
     const file_gov_id = req.files['doc_gov_id'] ? req.files['doc_gov_id'][0].filename : null;
 
     try {
-        // Siguraduhin na tumutugma ito sa ALTER TABLE command na ginawa natin
         const queryText = `
             INSERT INTO submitted_programs (
                 user_id, program_type, application_role, first_name, middle_name, last_name, 
@@ -199,16 +198,26 @@ app.get('/student/my-applications', async (req, res) => {
     } catch (err) { res.status(500).json({ error: "Error fetching user records" }); }
 });
 
-app.post('/update-status', async (req, res) => {
-    const { id, status } = req.body;
+// Dito ko pinalitan ang route para maging PATCH at mas malinis ang query
+app.patch('/applications/:id', async (req, res) => {
+    const { id } = req.params;
+    const { status } = req.body;
     try {
-        await pool.query('UPDATE submitted_programs SET status = $1 WHERE id = $2', [status, id]);
-        await pool.query(
-            'INSERT INTO notifications (message, status, created_at) VALUES ($1, $2, NOW())',
-            [`Application #${id} is now ${status}.`, 'unread']
-        );
-        res.status(200).json({ message: "Status updated!" });
-    } catch (err) { res.status(500).json({ error: "Failed update" }); }
+        const result = await pool.query('UPDATE submitted_programs SET status = $1 WHERE id = $2 RETURNING *', [status, id]);
+        
+        if (result.rows.length > 0) {
+            await pool.query(
+                'INSERT INTO notifications (message, status, created_at) VALUES ($1, $2, NOW())',
+                [`Application #${id} is now ${status}.`, 'unread']
+            );
+            res.status(200).json({ message: "Status updated!", data: result.rows[0] });
+        } else {
+            res.status(404).json({ error: "Application not found" });
+        }
+    } catch (err) { 
+        console.error("Update error:", err);
+        res.status(500).json({ error: "Failed update" }); 
+    }
 });
 
 app.get('/notifications', async (req, res) => {
