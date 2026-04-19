@@ -10,7 +10,7 @@ const bcrypt = require('bcryptjs');
 const app = express();
 const server = http.createServer(app); 
 
-// --- 1. SOCKET.IO CONFIGURATION (FIXED CORS & ROOMS) ---
+// --- 1. SOCKET.IO CONFIGURATION ---
 const io = new Server(server, {
     cors: { 
         origin: ["https://www.tugonph.com", "https://tugonph.com"], 
@@ -21,22 +21,14 @@ const io = new Server(server, {
 
 const pool = new Pool({
     connectionString: 'postgresql://tugondb_user:dlVoDAJvrcccEseW7BujbPdhJtqq96Lz@dpg-d7fq3hf7f7vs73a7s5a0-a/tugondb',  
-    ssl: {
-        rejectUnauthorized: false 
-    },
+    ssl: { rejectUnauthorized: false },
     max: 10,
     idleTimeoutMillis: 30000,
     connectionTimeoutMillis: 10000,
 });
 
-pool.on('error', (err) => {
-    console.error('Unexpected error on idle database client', err);
-});
-
 pool.connect((err, client, release) => {
-    if (err) {
-        return console.error('Error connecting to database:', err.stack);
-    }
+    if (err) return console.error('Error connecting to database:', err.stack);
     console.log('Successfully connected to Render PostgreSQL!');
     release();
 });
@@ -50,7 +42,7 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage: storage });
 
-// --- 3. MIDDLEWARES (FIXED CORS) ---
+// --- 3. MIDDLEWARES ---
 app.use(cors({ 
     origin: ["https://www.tugonph.com", "https://tugonph.com"],
     credentials: true 
@@ -59,20 +51,13 @@ app.use(express.json());
 app.use(express.static(__dirname)); 
 app.use('/uploads', express.static('uploads'));
 
-// --- 4. SOCKET.IO CHAT LOGIC (UPDATED FOR REAL-TIME TIMESTAMP) ---
-let activeUsers = new Set(); // Dito ise-save ang mga email na nagcha-chat para makita ni Admin
+// --- 4. SOCKET.IO CHAT LOGIC ---
+let activeUsers = new Set();
 
 io.on('connection', (socket) => {
-    console.log('User connected:', socket.id);
-
-    // Kapag sumali sa specific chat (base sa user room/email)
     socket.on('join_chat', (data) => {
         if (data.room) {
             socket.join(data.room);
-            console.log(`Socket ${socket.id} joined room: ${data.room}`);
-            
-            // Kung ang pumasok ay student (hindi Admin at hindi 'General'), 
-            // idagdag ang email sa listahan at i-broadcast sa lahat
             if (data.room !== 'Admin' && data.room !== 'General') {
                 activeUsers.add(data.room);
                 io.emit('update_user_list', Array.from(activeUsers));
@@ -87,20 +72,16 @@ io.on('connection', (socket) => {
                 [data.room]
             );
             socket.emit('chat_history', result.rows);
-        } catch (err) {
-            console.error("Error loading history:", err);
-        }
+        } catch (err) { console.error("Error loading history:", err); }
     });
 
     socket.on('send_message', async (data) => {
         try {
-            // Save sa DB
             await pool.query(
                 'INSERT INTO chat_messages (sender, message, room) VALUES ($1, $2, $3)', 
                 [data.sender, data.text, data.room]
             );
 
-            // Gagawa ng REAL-TIME formatted time para sa broadcast
             const realTime = new Date().toLocaleTimeString('en-US', { 
                 hour: '2-digit', 
                 minute: '2-digit',
@@ -110,21 +91,14 @@ io.on('connection', (socket) => {
             io.to(data.room).emit('receive_message', { 
                 text: data.text, 
                 sender: data.sender, 
-                time: realTime, // Accurate time mula sa server
+                time: realTime,
                 room: data.room
             });
-        } catch (err) {
-            console.error("Error saving/sending message:", err);
-        }
+        } catch (err) { console.error("Error saving/sending message:", err); }
     });
 
-    socket.on('typing', (data) => {
-        socket.to(data.room).emit('display_typing', data);
-    });
-
-    socket.on('disconnect', () => { 
-        console.log('User disconnected'); 
-    });
+    socket.on('typing', (data) => { socket.to(data.room).emit('display_typing', data); });
+    socket.on('disconnect', () => { console.log('User disconnected'); });
 });
 
 // --- 5. AUTHENTICATION ROUTES ---
@@ -137,9 +111,7 @@ app.post('/signup', async (req, res) => {
             [fullname, email, hashedPassword] 
         );
         res.status(200).json({ message: "User registered!", user: result.rows[0] });
-    } catch (err) { 
-        res.status(500).json({ error: "Database error!" }); 
-    }
+    } catch (err) { res.status(500).json({ error: "Database error!" }); }
 });
 
 app.post('/login', async (req, res) => {
@@ -149,20 +121,13 @@ app.post('/login', async (req, res) => {
         if (result.rows.length > 0) {
             const user = result.rows[0];
             const isMatch = await bcrypt.compare(password, user.password);
-            if (isMatch) {
-                res.status(200).json({ message: "Login successful", user: user });
-            } else {
-                res.status(401).json({ error: "Invalid credentials!" });
-            }
-        } else { 
-            res.status(401).json({ error: "Invalid credentials!" }); 
-        }
-    } catch (err) { 
-        res.status(500).json({ error: "Server Error" }); 
-    }
+            if (isMatch) res.status(200).json({ message: "Login successful", user: user });
+            else res.status(401).json({ error: "Invalid credentials!" });
+        } else res.status(401).json({ error: "Invalid credentials!" });
+    } catch (err) { res.status(500).json({ error: "Server Error" }); }
 });
 
-// --- 6. PROGRAM SUBMISSION ---
+// --- 6. PROGRAM SUBMISSION (FIXED FOR DB COLUMNS) ---
 app.post('/submit-program', upload.fields([
     { name: 'doc_coe', maxCount: 1 },
     { name: 'doc_indigency', maxCount: 1 },
@@ -175,12 +140,14 @@ app.post('/submit-program', upload.fields([
         mobile_number, email, gcash, school_name, year_level, course, status 
     } = req.body;
 
+    // Kunin ang filenames mula sa multer
     const file_coe = req.files['doc_coe'] ? req.files['doc_coe'][0].filename : null;
     const file_indigency = req.files['doc_indigency'] ? req.files['doc_indigency'][0].filename : null;
     const file_school_id = req.files['doc_school_id'] ? req.files['doc_school_id'][0].filename : null;
     const file_gov_id = req.files['doc_gov_id'] ? req.files['doc_gov_id'][0].filename : null;
 
     try {
+        // Siguraduhin na tumutugma ito sa ALTER TABLE command na ginawa natin
         const queryText = `
             INSERT INTO submitted_programs (
                 user_id, program_type, application_role, first_name, middle_name, last_name, 
