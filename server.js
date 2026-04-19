@@ -59,7 +59,7 @@ app.use(express.json());
 app.use(express.static(__dirname)); 
 app.use('/uploads', express.static('uploads'));
 
-// --- 4. SOCKET.IO CHAT LOGIC (UPDATED FOR SEPARATE ROOMS & DYNAMIC LIST) ---
+// --- 4. SOCKET.IO CHAT LOGIC (UPDATED FOR REAL-TIME TIMESTAMP) ---
 let activeUsers = new Set(); // Dito ise-save ang mga email na nagcha-chat para makita ni Admin
 
 io.on('connection', (socket) => {
@@ -94,17 +94,23 @@ io.on('connection', (socket) => {
 
     socket.on('send_message', async (data) => {
         try {
+            // Save sa DB
             await pool.query(
                 'INSERT INTO chat_messages (sender, message, room) VALUES ($1, $2, $3)', 
                 [data.sender, data.text, data.room]
             );
 
-            const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            // Gagawa ng REAL-TIME formatted time para sa broadcast
+            const realTime = new Date().toLocaleTimeString('en-US', { 
+                hour: '2-digit', 
+                minute: '2-digit',
+                hour12: true 
+            });
             
             io.to(data.room).emit('receive_message', { 
                 text: data.text, 
                 sender: data.sender, 
-                time: time,
+                time: realTime, // Accurate time mula sa server
                 room: data.room
             });
         } catch (err) {
