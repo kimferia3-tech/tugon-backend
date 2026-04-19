@@ -10,7 +10,7 @@ const bcrypt = require('bcryptjs');
 const app = express();
 const server = http.createServer(app); 
 
-// --- 1. SOCKET.IO CONFIGURATION (FIXED CORS) ---
+// --- 1. SOCKET.IO CONFIGURATION (FIXED CORS & ROOMS) ---
 const io = new Server(server, {
     cors: { 
         origin: ["https://www.tugonph.com", "https://tugonph.com"], 
@@ -59,14 +59,24 @@ app.use(express.json());
 app.use(express.static(__dirname)); 
 app.use('/uploads', express.static('uploads'));
 
-// --- 4. SOCKET.IO CHAT LOGIC ---
+// --- 4. SOCKET.IO CHAT LOGIC (UPDATED FOR SEPARATE ROOMS) ---
 io.on('connection', (socket) => {
     console.log('User connected:', socket.id);
 
-    socket.on('get_chat_history', async () => {
+    // Kapag sumali sa specific chat (base sa user room/email)
+    socket.on('join_chat', (data) => {
+        if (data.room) {
+            socket.join(data.room);
+            console.log(`Socket ${socket.id} joined room: ${data.room}`);
+        }
+    });
+
+    socket.on('get_chat_history', async (data) => {
         try {
+            // Kinukuha ang history base sa room para hindi maghalo-halo
             const result = await pool.query(
-                "SELECT sender, message as text, TO_CHAR(created_at, 'HH12:MI AM') as time FROM chat_messages ORDER BY created_at ASC"
+                "SELECT sender, message as text, TO_CHAR(created_at, 'HH12:MI AM') as time FROM chat_messages WHERE room = $1 ORDER BY created_at ASC",
+                [data.room]
             );
             socket.emit('chat_history', result.rows);
         } catch (err) {
@@ -76,19 +86,29 @@ io.on('connection', (socket) => {
 
     socket.on('send_message', async (data) => {
         try {
+            // Sine-save ang 'room' para alam kung kaninong profile ang message
             await pool.query(
-                'INSERT INTO chat_messages (sender, message) VALUES ($1, $2)', 
-                [data.sender, data.text]
+                'INSERT INTO chat_messages (sender, message, room) VALUES ($1, $2, $3)', 
+                [data.sender, data.text, data.room]
             );
+
             const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-            io.emit('receive_message', { 
+            
+            // Nagpapadala lang sa mga taong nasa loob ng room na 'yun
+            io.to(data.room).emit('receive_message', { 
                 text: data.text, 
                 sender: data.sender, 
-                time: time 
+                time: time,
+                room: data.room
             });
         } catch (err) {
             console.error("Error saving/sending message:", err);
         }
+    });
+
+    // Typing Indicator Logic
+    socket.on('typing', (data) => {
+        socket.to(data.room).emit('display_typing', data);
     });
 
     socket.on('disconnect', () => { console.log('User disconnected'); });
