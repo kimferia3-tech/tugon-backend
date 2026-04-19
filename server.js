@@ -59,7 +59,9 @@ app.use(express.json());
 app.use(express.static(__dirname)); 
 app.use('/uploads', express.static('uploads'));
 
-// --- 4. SOCKET.IO CHAT LOGIC (UPDATED FOR SEPARATE ROOMS) ---
+// --- 4. SOCKET.IO CHAT LOGIC (UPDATED FOR SEPARATE ROOMS & DYNAMIC LIST) ---
+let activeUsers = new Set(); // Dito ise-save ang mga email na nagcha-chat para makita ni Admin
+
 io.on('connection', (socket) => {
     console.log('User connected:', socket.id);
 
@@ -68,12 +70,18 @@ io.on('connection', (socket) => {
         if (data.room) {
             socket.join(data.room);
             console.log(`Socket ${socket.id} joined room: ${data.room}`);
+            
+            // Kung ang pumasok ay student (hindi Admin at hindi 'General'), 
+            // idagdag ang email sa listahan at i-broadcast sa lahat
+            if (data.room !== 'Admin' && data.room !== 'General') {
+                activeUsers.add(data.room);
+                io.emit('update_user_list', Array.from(activeUsers));
+            }
         }
     });
 
     socket.on('get_chat_history', async (data) => {
         try {
-            // Kinukuha ang history base sa room para hindi maghalo-halo
             const result = await pool.query(
                 "SELECT sender, message as text, TO_CHAR(created_at, 'HH12:MI AM') as time FROM chat_messages WHERE room = $1 ORDER BY created_at ASC",
                 [data.room]
@@ -86,7 +94,6 @@ io.on('connection', (socket) => {
 
     socket.on('send_message', async (data) => {
         try {
-            // Sine-save ang 'room' para alam kung kaninong profile ang message
             await pool.query(
                 'INSERT INTO chat_messages (sender, message, room) VALUES ($1, $2, $3)', 
                 [data.sender, data.text, data.room]
@@ -94,7 +101,6 @@ io.on('connection', (socket) => {
 
             const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
             
-            // Nagpapadala lang sa mga taong nasa loob ng room na 'yun
             io.to(data.room).emit('receive_message', { 
                 text: data.text, 
                 sender: data.sender, 
@@ -106,12 +112,13 @@ io.on('connection', (socket) => {
         }
     });
 
-    // Typing Indicator Logic
     socket.on('typing', (data) => {
         socket.to(data.room).emit('display_typing', data);
     });
 
-    socket.on('disconnect', () => { console.log('User disconnected'); });
+    socket.on('disconnect', () => { 
+        console.log('User disconnected'); 
+    });
 });
 
 // --- 5. AUTHENTICATION ROUTES ---
