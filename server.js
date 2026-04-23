@@ -13,7 +13,7 @@ const server = http.createServer(app);
 // --- 1. SOCKET.IO CONFIGURATION ---
 const io = new Server(server, {
     cors: { 
-        origin: "*", 
+        origin: ["https://www.tugonph.com", "https://tugonph.com"], 
         methods: ["GET", "POST", "PATCH", "DELETE"],
         credentials: true
     }
@@ -43,14 +43,21 @@ const storage = multer.diskStorage({
 const upload = multer({ storage: storage });
 
 // --- 3. MIDDLEWARES ---
-app.use(cors()); 
+app.use(cors({ 
+    origin: ["https://www.tugonph.com", "https://tugonph.com"],
+    methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+    credentials: true 
+})); 
 app.use(express.json());
 app.use(express.static(__dirname)); 
 app.use('/uploads', express.static('uploads'));
 
-// --- 4. SOCKET.IO CHAT LOGIC ---
+// --- 4. SOCKET.IO CHAT LOGIC (RE-ADDED ALL) ---
 let activeUsers = new Set();
+
 io.on('connection', (socket) => {
+    console.log('A user connected');
+
     socket.on('join_chat', (data) => {
         if (data.room) {
             socket.join(data.room);
@@ -73,13 +80,31 @@ io.on('connection', (socket) => {
 
     socket.on('send_message', async (data) => {
         try {
-            await pool.query('INSERT INTO chat_messages (sender, message, room) VALUES ($1, $2, $3)', [data.sender, data.text, data.room]);
-            const realTime = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
-            io.to(data.room).emit('receive_message', { text: data.text, sender: data.sender, time: realTime, room: data.room });
-        } catch (err) { console.error("Error saving message:", err); }
+            await pool.query(
+                'INSERT INTO chat_messages (sender, message, room) VALUES ($1, $2, $3)', 
+                [data.sender, data.text, data.room]
+            );
+
+            const realTime = new Date().toLocaleTimeString('en-US', { 
+                hour: '2-digit', 
+                minute: '2-digit',
+                hour12: true 
+            });
+            
+            io.to(data.room).emit('receive_message', { 
+                text: data.text, 
+                sender: data.sender, 
+                time: realTime,
+                room: data.room
+            });
+        } catch (err) { console.error("Error saving/sending message:", err); }
     });
 
     socket.on('typing', (data) => { socket.to(data.room).emit('display_typing', data); });
+    
+    socket.on('disconnect', () => { 
+        console.log('User disconnected'); 
+    });
 });
 
 // --- 5. AUTHENTICATION ROUTES ---
@@ -87,7 +112,10 @@ app.post('/signup', async (req, res) => {
     const { fullname, email, password } = req.body;
     try {
         const hashedPassword = await bcrypt.hash(password, 10);
-        const result = await pool.query('INSERT INTO users(fullname, email, password) VALUES($1, $2, $3) RETURNING *', [fullname, email, hashedPassword]);
+        const result = await pool.query(
+            'INSERT INTO users(fullname, email, password) VALUES($1, $2, $3) RETURNING *', 
+            [fullname, email, hashedPassword] 
+        );
         res.status(200).json({ message: "User registered!", user: result.rows[0] });
     } catch (err) { res.status(500).json({ error: "Database error!" }); }
 });
@@ -105,42 +133,58 @@ app.post('/login', async (req, res) => {
     } catch (err) { res.status(500).json({ error: "Server Error" }); }
 });
 
-// --- 6. PROGRAM SUBMISSION ---
+// --- 6. PROGRAM SUBMISSION (WITH ADMIN TIE-IN) ---
 app.post('/submit-program', upload.fields([
     { name: 'doc_coe', maxCount: 1 },
     { name: 'doc_indigency', maxCount: 1 },
     { name: 'doc_school_id', maxCount: 1 },
     { name: 'doc_gov_id', maxCount: 1 }
 ]), async (req, res) => {
-    const data = req.body;
-    const files = req.files;
+    const { 
+        user_id, program_type, application_role, first_name, middle_name, last_name, 
+        dob, age, civil_status, sex, street, barangay, municipality, province, 
+        mobile_number, email, gcash, school_name, year_level, course, status 
+    } = req.body;
+
+    const file_coe = req.files['doc_coe'] ? req.files['doc_coe'][0].filename : null;
+    const file_indigency = req.files['doc_indigency'] ? req.files['doc_indigency'][0].filename : null;
+    const file_school_id = req.files['doc_school_id'] ? req.files['doc_school_id'][0].filename : null;
+    const file_gov_id = req.files['doc_gov_id'] ? req.files['doc_gov_id'][0].filename : null;
+
     try {
         const queryText = `
             INSERT INTO submitted_programs (
                 user_id, program_type, application_role, first_name, middle_name, last_name, 
                 dob, age, civil_status, sex, street, barangay, municipality, province, 
                 mobile_number, email, gcash, school_name, year_level, course, 
-                doc_coe, doc_indigency, doc_school_id, doc_gov_id, status, submitted_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, NOW())`;
+                doc_coe, doc_indigency, doc_school_id, doc_gov_id,
+                status, submitted_at
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, NOW())
+            RETURNING *`;
 
         const values = [
-            data.user_id || null, data.program_type, data.application_role, data.first_name, data.middle_name, data.last_name, 
-            data.dob, data.age, data.civil_status, data.sex, data.street, data.barangay, data.municipality, data.province, 
-            data.mobile_number, data.email, data.gcash, data.school_name, data.year_level, data.course,
-            files['doc_coe'] ? files['doc_coe'][0].filename : null,
-            files['doc_indigency'] ? files['doc_indigency'][0].filename : null,
-            files['doc_school_id'] ? files['doc_school_id'][0].filename : null,
-            files['doc_gov_id'] ? files['doc_gov_id'][0].filename : null,
-            data.status || 'Pending'
+            user_id || null, program_type, application_role, first_name, middle_name, last_name, 
+            dob, age, civil_status, sex, street, barangay, municipality, province, 
+            mobile_number, email, gcash, school_name, year_level, course,
+            file_coe, file_indigency, file_school_id, file_gov_id,
+            status || 'Pending'
         ];
 
-        await pool.query(queryText, values);
-        await pool.query('INSERT INTO notifications (message, status, created_at) VALUES ($1, $2, NOW())', [`${data.first_name} applied for ${data.program_type}.`, 'unread']);
-        res.status(200).json({ message: "Application submitted!" });
-    } catch (err) { res.status(500).json({ error: err.message }); }
+        const result = await pool.query(queryText, values);
+        
+        await pool.query(
+            'INSERT INTO notifications (message, status, created_at) VALUES ($1, $2, NOW())',
+            [`${first_name} applied for ${program_type}.`, 'unread']
+        );
+        
+        res.status(200).json({ message: "Application submitted!", application: result.rows[0] });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: "Failed to save: " + err.message });
+    }
 });
 
-// --- 7. ADMIN & USER DATA ROUTES ---
+// --- 7. ADMIN & USER DATA ROUTES (FULL SET) ---
 app.get('/applications', async (req, res) => {
     try {
         const result = await pool.query("SELECT *, TO_CHAR(submitted_at, 'Mon DD, YYYY') as date FROM submitted_programs ORDER BY submitted_at DESC");
@@ -148,13 +192,36 @@ app.get('/applications', async (req, res) => {
     } catch (err) { res.status(500).json({ error: "Error fetching applications" }); }
 });
 
+app.get('/student/my-applications', async (req, res) => {
+    const { email } = req.query; 
+    try {
+        const result = await pool.query(
+            "SELECT id, program_type, status, TO_CHAR(submitted_at, 'Mon DD, YYYY') as date_applied FROM submitted_programs WHERE email = $1 ORDER BY submitted_at DESC",
+            [email]
+        );
+        res.status(200).json(result.rows);
+    } catch (err) { res.status(500).json({ error: "Error fetching user records" }); }
+});
+
 app.patch('/applications/:id', async (req, res) => {
     const { id } = req.params;
     const { status } = req.body;
     try {
-        await pool.query('UPDATE submitted_programs SET status = $1 WHERE id = $2', [status, id]);
-        res.status(200).json({ message: "Status updated!" });
-    } catch (err) { res.status(500).json({ error: "Failed update" }); }
+        const result = await pool.query('UPDATE submitted_programs SET status = $1 WHERE id = $2 RETURNING *', [status, id]);
+        
+        if (result.rows.length > 0) {
+            await pool.query(
+                'INSERT INTO notifications (message, status, created_at) VALUES ($1, $2, NOW())',
+                [`Application #${id} is now ${status}.`, 'unread']
+            );
+            res.status(200).json({ message: "Status updated!", data: result.rows[0] });
+        } else {
+            res.status(404).json({ error: "Application not found" });
+        }
+    } catch (err) { 
+        console.error("Update error:", err);
+        res.status(500).json({ error: "Failed update" }); 
+    }
 });
 
 app.get('/notifications', async (req, res) => {
@@ -164,5 +231,6 @@ app.get('/notifications', async (req, res) => {
     } catch (err) { res.status(500).json({ error: "Error" }); }
 });
 
+// --- 8. START SERVER ---
 const PORT = process.env.PORT || 3000; 
 server.listen(PORT, () => { console.log(`Server running on port ${PORT}`); });
