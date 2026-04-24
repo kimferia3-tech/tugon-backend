@@ -133,17 +133,20 @@ app.post('/login', async (req, res) => {
     } catch (err) { res.status(500).json({ error: "Server Error" }); }
 });
 
-// --- 6. SUBMISSION ROUTE (Eksaktong tugma sa columns ng Database mo) ---
+// --- 6. SUBMISSION ROUTE (Updated for Field Name Mismatch) ---
 app.post('/submit-program', upload.fields([
+    { name: 'id_photo_2x2', maxCount: 1 }, // In-update mula photo_2x2 para tumugma sa HTML mo
     { name: 'doc_coe', maxCount: 1 },
     { name: 'doc_psa', maxCount: 1 },
     { name: 'doc_school_id', maxCount: 1 },
+    { name: 'doc_form', maxCount: 1 }, // Added for education applications
     { name: 'doc_billing', maxCount: 1 },
     { name: 'doc_med_cert', maxCount: 1 },
     { name: 'doc_social_case', maxCount: 1 },
     { name: 'doc_patient_id', maxCount: 1 },
     { name: 'doc_rep_id', maxCount: 1 },
-    { name: 'photo_2x2', maxCount: 1 }
+    { name: 'doc_gov_id', maxCount: 1 },
+    { name: 'doc_indigency', maxCount: 1 }
 ]), async (req, res) => {
     const { 
         user_id, program_type, application_role, first_name, middle_name, last_name, 
@@ -155,15 +158,18 @@ app.post('/submit-program', upload.fields([
     const getFileName = (fieldName) => req.files[fieldName] ? req.files[fieldName][0].filename : null;
 
     const files = {
+        photo_2x2: getFileName('id_photo_2x2'), // In-update para tumugma sa database column mo
         coe: getFileName('doc_coe'),
         psa: getFileName('doc_psa'),
         school_id: getFileName('doc_school_id'),
+        form: getFileName('doc_form'),
         billing: getFileName('doc_billing'),
         med_cert: getFileName('doc_med_cert'),
         social_case: getFileName('doc_social_case'),
         patient_id: getFileName('doc_patient_id'),
         rep_id: getFileName('doc_rep_id'),
-        photo_2x2: getFileName('photo_2x2')
+        gov_id: getFileName('doc_gov_id'),
+        indigency: getFileName('doc_indigency')
     };
 
     try {
@@ -182,9 +188,9 @@ app.post('/submit-program', upload.fields([
             ) RETURNING *`;
 
         const values = [
-            user_id || null, program_type, application_role, first_name, middle_name, last_name, 
+            user_id || 0, program_type, application_role, first_name, middle_name, last_name, 
             dob, age, civil_status, sex, street, barangay, municipality, province, 
-            mobile_number, email, gcash, school_name, year_level, course,
+            mobile_number, email, gcash, school_name || 'N/A', year_level || 'N/A', course || 'N/A',
             father_name, mother_name, father_occ, mother_occ,
             files.coe, files.psa, files.school_id, files.billing, files.med_cert,
             files.social_case, files.patient_id, files.rep_id, files.photo_2x2,
