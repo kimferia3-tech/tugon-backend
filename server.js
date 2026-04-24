@@ -146,75 +146,55 @@ app.post('/submit-program', upload.fields([
     { name: 'doc_patient_id', maxCount: 1 },
     { name: 'doc_rep_id', maxCount: 1 },
     { name: 'doc_gov_id', maxCount: 1 },
-    { name: 'doc_indigency', maxCount: 1 }
+    { name: 'doc_indigency', maxCount: 1 },
+    { name: 'doc_patient_photo', maxCount: 1 }
 ]), async (req, res) => {
-    const { 
-        user_id, program_type, application_role, first_name, middle_name, last_name, 
-        dob, age, civil_status, sex, street, barangay, municipality, province, 
-        mobile_number, email, gcash, school_name, year_level, course, 
-        father_name, mother_name, father_occ, mother_occ, status 
-    } = req.body;
-
-    const getFileName = (fieldName) => req.files[fieldName] ? req.files[fieldName][0].filename : null;
-
-    const files = {
-        photo_2x2: getFileName('id_photo_2x2'),
-        coe: getFileName('doc_coe'),
-        psa: getFileName('doc_psa'),
-        school_id: getFileName('doc_school_id'),
-        form: getFileName('doc_form'),
-        billing: getFileName('doc_billing'),
-        med_cert: getFileName('doc_med_cert'),
-        social_case: getFileName('doc_social_case'),
-        patient_id: getFileName('doc_patient_id'),
-        rep_id: getFileName('doc_rep_id'),
-        gov_id: getFileName('doc_gov_id'),
-        indigency: getFileName('doc_indigency')
-    };
+    const data = req.body;
+    const getFileName = (fieldName) => (req.files && req.files[fieldName]) ? req.files[fieldName][0].filename : null;
 
     try {
         const queryText = `
             INSERT INTO submitted_programs (
                 user_id, program_type, application_role, first_name, middle_name, last_name, 
                 dob, age, civil_status, sex, street, barangay, municipality, province, 
-                mobile_number, email, gcash, school_name, year_level, course,
+                mobile_number, email, gcash_no, school_name, year_level, course_strand,
                 father_name, mother_name, father_occ, mother_occ,
                 doc_coe, doc_psa, doc_school_id, doc_billing, doc_med_cert, 
                 doc_social_case, doc_patient_id, doc_rep_id, doc_gov_id, doc_indigency, doc_form,
-                photo_2x2, status, submitted_at
+                id_photo_2x2, doc_patient_photo, status, created_at
             ) VALUES (
                 $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
-                $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, NOW()
+                $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, NOW()
             ) RETURNING *`;
 
         const values = [
-            user_id || 0, program_type, application_role, first_name, middle_name, last_name, 
-            dob, age, civil_status, sex, street, barangay, municipality, province, 
-            mobile_number, email, gcash, school_name || 'N/A', year_level || 'N/A', course || 'N/A',
-            father_name, mother_name, father_occ, mother_occ,
-            files.coe, files.psa, files.school_id, files.billing, files.med_cert,
-            files.social_case, files.patient_id, files.rep_id, files.gov_id, files.indigency, files.form,
-            files.photo_2x2, status || 'Pending'
+            data.user_id || 0, data.program_type, data.application_role || 'N/A', data.first_name, data.middle_name || '', data.last_name, 
+            data.dob, data.age, data.civil_status, data.sex, data.street, data.barangay, data.municipality, data.province, 
+            data.mobile_number, data.email, data.gcash || 'N/A', data.school_name || 'N/A', data.year_level || 'N/A', data.course || 'N/A',
+            data.father_name || 'N/A', data.mother_name || 'N/A', data.father_occ || 'N/A', data.mother_occ || 'N/A',
+            getFileName('doc_coe'), getFileName('doc_psa'), getFileName('doc_school_id'), getFileName('doc_billing'), getFileName('doc_med_cert'),
+            getFileName('doc_social_case'), getFileName('doc_patient_id'), getFileName('doc_rep_id'), getFileName('doc_gov_id'), getFileName('doc_indigency'), getFileName('doc_form'),
+            getFileName('id_photo_2x2'), getFileName('doc_patient_photo'), data.status || 'Pending'
         ];
 
         const result = await pool.query(queryText, values);
         
         await pool.query(
             'INSERT INTO notifications (message, status, created_at) VALUES ($1, $2, NOW())',
-            [`${first_name} applied for ${program_type}.`, 'unread']
+            [`${data.first_name} applied for ${data.program_type}.`, 'unread']
         );
         
-        res.status(200).json({ message: "Application submitted!", application: result.rows[0] });
+        res.status(200).json({ message: "Application Sent!", application: result.rows[0] });
     } catch (err) {
         console.error("Database Save Error:", err.message);
-        res.status(500).json({ error: "Failed to save: " + err.message });
+        res.status(500).json({ error: "Submission Error: " + err.message });
     }
 });
 
 // --- 7. ADMIN & USER DATA ROUTES ---
 app.get('/applications', async (req, res) => {
     try {
-        const result = await pool.query("SELECT *, TO_CHAR(submitted_at, 'Mon DD, YYYY') as date FROM submitted_programs ORDER BY submitted_at DESC");
+        const result = await pool.query("SELECT *, TO_CHAR(created_at, 'Mon DD, YYYY') as date FROM submitted_programs ORDER BY created_at DESC");
         res.status(200).json(result.rows);
     } catch (err) { res.status(500).json({ error: "Error fetching applications" }); }
 });
@@ -223,7 +203,7 @@ app.get('/student/my-applications', async (req, res) => {
     const { email } = req.query; 
     try {
         const result = await pool.query(
-            "SELECT id, program_type, status, TO_CHAR(submitted_at, 'Mon DD, YYYY') as date_applied FROM submitted_programs WHERE email = $1 ORDER BY submitted_at DESC",
+            "SELECT id, program_type, status, TO_CHAR(created_at, 'Mon DD, YYYY') as date_applied FROM submitted_programs WHERE email = $1 ORDER BY created_at DESC",
             [email]
         );
         res.status(200).json(result.rows);
