@@ -133,13 +133,13 @@ app.post('/login', async (req, res) => {
     } catch (err) { res.status(500).json({ error: "Server Error" }); }
 });
 
-// --- 6. SUBMISSION ROUTE (Updated for Field Name Mismatch) ---
+// --- 6. SUBMISSION ROUTE (FIXED FOR ALL PROGRAMS) ---
 app.post('/submit-program', upload.fields([
-    { name: 'id_photo_2x2', maxCount: 1 }, // In-update mula photo_2x2 para tumugma sa HTML mo
+    { name: 'id_photo_2x2', maxCount: 1 },
     { name: 'doc_coe', maxCount: 1 },
     { name: 'doc_psa', maxCount: 1 },
     { name: 'doc_school_id', maxCount: 1 },
-    { name: 'doc_form', maxCount: 1 }, // Added for education applications
+    { name: 'doc_form', maxCount: 1 },
     { name: 'doc_billing', maxCount: 1 },
     { name: 'doc_med_cert', maxCount: 1 },
     { name: 'doc_social_case', maxCount: 1 },
@@ -158,7 +158,7 @@ app.post('/submit-program', upload.fields([
     const getFileName = (fieldName) => req.files[fieldName] ? req.files[fieldName][0].filename : null;
 
     const files = {
-        photo_2x2: getFileName('id_photo_2x2'), // In-update para tumugma sa database column mo
+        photo_2x2: getFileName('id_photo_2x2'),
         coe: getFileName('doc_coe'),
         psa: getFileName('doc_psa'),
         school_id: getFileName('doc_school_id'),
@@ -180,11 +180,11 @@ app.post('/submit-program', upload.fields([
                 mobile_number, email, gcash, school_name, year_level, course,
                 father_name, mother_name, father_occ, mother_occ,
                 doc_coe, doc_psa, doc_school_id, doc_billing, doc_med_cert, 
-                doc_social_case, doc_patient_id, doc_rep_id, photo_2x2,
-                status, submitted_at
+                doc_social_case, doc_patient_id, doc_rep_id, doc_gov_id, doc_indigency, doc_form,
+                photo_2x2, status, submitted_at
             ) VALUES (
                 $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
-                $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, NOW()
+                $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, NOW()
             ) RETURNING *`;
 
         const values = [
@@ -193,8 +193,8 @@ app.post('/submit-program', upload.fields([
             mobile_number, email, gcash, school_name || 'N/A', year_level || 'N/A', course || 'N/A',
             father_name, mother_name, father_occ, mother_occ,
             files.coe, files.psa, files.school_id, files.billing, files.med_cert,
-            files.social_case, files.patient_id, files.rep_id, files.photo_2x2,
-            status || 'Pending'
+            files.social_case, files.patient_id, files.rep_id, files.gov_id, files.indigency, files.form,
+            files.photo_2x2, status || 'Pending'
         ];
 
         const result = await pool.query(queryText, values);
