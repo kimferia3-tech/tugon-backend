@@ -52,7 +52,7 @@ app.use(express.json());
 app.use(express.static(__dirname)); 
 app.use('/uploads', express.static('uploads'));
 
-// --- 4. SOCKET.IO CHAT LOGIC (RE-ADDED ALL) ---
+// --- 4. SOCKET.IO CHAT LOGIC ---
 let activeUsers = new Set();
 
 io.on('connection', (socket) => {
@@ -133,40 +133,61 @@ app.post('/login', async (req, res) => {
     } catch (err) { res.status(500).json({ error: "Server Error" }); }
 });
 
-// --- 6. PROGRAM SUBMISSION (WITH ADMIN TIE-IN) ---
+// --- 6. UPDATED PROGRAM SUBMISSION (HANDLES ALL 3 FORMS) ---
 app.post('/submit-program', upload.fields([
     { name: 'doc_coe', maxCount: 1 },
-    { name: 'doc_indigency', maxCount: 1 },
+    { name: 'doc_psa', maxCount: 1 },
     { name: 'doc_school_id', maxCount: 1 },
-    { name: 'doc_gov_id', maxCount: 1 }
+    { name: 'doc_billing', maxCount: 1 },
+    { name: 'doc_med_cert', maxCount: 1 },
+    { name: 'doc_social_case', maxCount: 1 },
+    { name: 'doc_patient_id', maxCount: 1 },
+    { name: 'doc_rep_id', maxCount: 1 },
+    { name: 'photo_2x2', maxCount: 1 }
 ]), async (req, res) => {
     const { 
         user_id, program_type, application_role, first_name, middle_name, last_name, 
         dob, age, civil_status, sex, street, barangay, municipality, province, 
-        mobile_number, email, gcash, school_name, year_level, course, status 
+        mobile_number, email, gcash, school_name, year_level, course, 
+        father_name, mother_name, father_occ, mother_occ, status 
     } = req.body;
 
-    const file_coe = req.files['doc_coe'] ? req.files['doc_coe'][0].filename : null;
-    const file_indigency = req.files['doc_indigency'] ? req.files['doc_indigency'][0].filename : null;
-    const file_school_id = req.files['doc_school_id'] ? req.files['doc_school_id'][0].filename : null;
-    const file_gov_id = req.files['doc_gov_id'] ? req.files['doc_gov_id'][0].filename : null;
+    const getFileName = (fieldName) => req.files[fieldName] ? req.files[fieldName][0].filename : null;
+
+    const files = {
+        coe: getFileName('doc_coe'),
+        psa: getFileName('doc_psa'),
+        school_id: getFileName('doc_school_id'),
+        billing: getFileName('doc_billing'),
+        med_cert: getFileName('doc_med_cert'),
+        social_case: getFileName('doc_social_case'),
+        patient_id: getFileName('doc_patient_id'),
+        rep_id: getFileName('doc_rep_id'),
+        photo_2x2: getFileName('photo_2x2')
+    };
 
     try {
         const queryText = `
             INSERT INTO submitted_programs (
                 user_id, program_type, application_role, first_name, middle_name, last_name, 
                 dob, age, civil_status, sex, street, barangay, municipality, province, 
-                mobile_number, email, gcash, school_name, year_level, course, 
-                doc_coe, doc_indigency, doc_school_id, doc_gov_id,
+                mobile_number, email, gcash, school_name, year_level, course,
+                father_name, mother_name, father_occ, mother_occ,
+                doc_coe, doc_psa, doc_school_id, doc_billing, doc_med_cert, 
+                doc_social_case, doc_patient_id, doc_rep_id, photo_2x2,
                 status, submitted_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, NOW())
-            RETURNING *`;
+            ) VALUES (
+                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
+                $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, NOW()
+            ) RETURNING *`;
 
         const values = [
             user_id || null, program_type, application_role, first_name, middle_name, last_name, 
             dob, age, civil_status, sex, street, barangay, municipality, province, 
             mobile_number, email, gcash, school_name, year_level, course,
-            file_coe, file_indigency, file_school_id, file_gov_id,
+            father_name, mother_name, father_occ, mother_occ,
+            files.coe, files.psa, files.school_id, files.billing, files.med_cert,
+            files.social_case, files.patient_id, files.rep_id, files.photo_2x2,
             status || 'Pending'
         ];
 
@@ -184,7 +205,7 @@ app.post('/submit-program', upload.fields([
     }
 });
 
-// --- 7. ADMIN & USER DATA ROUTES (FULL SET) ---
+// --- 7. ADMIN & USER DATA ROUTES ---
 app.get('/applications', async (req, res) => {
     try {
         const result = await pool.query("SELECT *, TO_CHAR(submitted_at, 'Mon DD, YYYY') as date FROM submitted_programs ORDER BY submitted_at DESC");
