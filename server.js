@@ -133,7 +133,7 @@ app.post('/login', async (req, res) => {
     } catch (err) { res.status(500).json({ error: "Server Error" }); }
 });
 
-// --- 6. UPDATED PROGRAM SUBMISSION (HANDLES ALL 3 FORMS) ---
+// --- 6. SUBMISSION ROUTE (Eksaktong tugma sa columns ng Database mo) ---
 app.post('/submit-program', upload.fields([
     { name: 'doc_coe', maxCount: 1 },
     { name: 'doc_psa', maxCount: 1 },
@@ -200,7 +200,7 @@ app.post('/submit-program', upload.fields([
         
         res.status(200).json({ message: "Application submitted!", application: result.rows[0] });
     } catch (err) {
-        console.error(err);
+        console.error("Database Save Error:", err.message);
         res.status(500).json({ error: "Failed to save: " + err.message });
     }
 });
