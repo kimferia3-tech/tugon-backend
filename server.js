@@ -110,12 +110,18 @@ app.post('/login', async (req, res) => {
 
 // --- 6. SUBMISSION ROUTE ---
 app.post('/submit-program', upload.fields([
-    { name: 'id_photo_2x2', maxCount: 1 }, { name: 'doc_coe', maxCount: 1 },
-    { name: 'doc_psa', maxCount: 1 }, { name: 'doc_school_id', maxCount: 1 },
-    { name: 'doc_form', maxCount: 1 }, { name: 'doc_billing', maxCount: 1 },
-    { name: 'doc_med_cert', maxCount: 1 }, { name: 'doc_social_case', maxCount: 1 },
-    { name: 'doc_patient_id', maxCount: 1 }, { name: 'doc_rep_id', maxCount: 1 },
-    { name: 'doc_gov_id', maxCount: 1 }, { name: 'doc_indigency', maxCount: 1 },
+    { name: 'id_photo_2x2', maxCount: 1 }, 
+    { name: 'doc_coe', maxCount: 1 },
+    { name: 'doc_psa', maxCount: 1 }, 
+    { name: 'doc_school_id', maxCount: 1 },
+    { name: 'doc_form', maxCount: 1 }, 
+    { name: 'doc_billing', maxCount: 1 },
+    { name: 'doc_med_cert', maxCount: 1 }, 
+    { name: 'doc_case_study', maxCount: 1 }, // Tinitiyak na match sa HTML 'name="doc_case_study"'
+    { name: 'doc_patient_id', maxCount: 1 }, 
+    { name: 'doc_rep_id', maxCount: 1 },
+    { name: 'doc_gov_id', maxCount: 1 }, 
+    { name: 'doc_indigency', maxCount: 1 },
     { name: 'doc_patient_photo', maxCount: 1 }
 ]), async (req, res) => {
     const data = req.body;
@@ -141,9 +147,20 @@ app.post('/submit-program', upload.fields([
             data.dob, data.age, data.civil_status, data.sex, data.street, data.barangay, data.municipality, data.province, 
             data.mobile_number, data.email, data.gcash || 'N/A', data.school_name || 'N/A', data.year_level || 'N/A', data.course || 'N/A',
             data.father_name || 'N/A', data.mother_name || 'N/A', data.father_occ || 'N/A', data.mother_occ || 'N/A',
-            getFileName('doc_coe'), getFileName('doc_psa'), getFileName('doc_school_id'), getFileName('doc_billing'), getFileName('doc_med_cert'),
-            getFileName('doc_social_case'), getFileName('doc_patient_id'), getFileName('doc_rep_id'), getFileName('doc_gov_id'), getFileName('doc_indigency'), getFileName('doc_form'),
-            getFileName('id_photo_2x2'), getFileName('doc_patient_photo'), data.status || 'Pending'
+            getFileName('doc_coe'), 
+            getFileName('doc_psa'), 
+            getFileName('doc_school_id'), 
+            getFileName('doc_billing'), 
+            getFileName('doc_med_cert'),
+            getFileName('doc_case_study'), // Kinukuha ang file path galing sa HTML field 'doc_case_study'
+            getFileName('doc_patient_id'), 
+            getFileName('doc_rep_id'), 
+            getFileName('doc_gov_id'), 
+            getFileName('doc_indigency'), 
+            getFileName('doc_form'),
+            getFileName('id_photo_2x2'), 
+            getFileName('doc_patient_photo'), 
+            data.status || 'Pending'
         ];
 
         const result = await pool.query(queryText, values);
