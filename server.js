@@ -108,7 +108,8 @@ app.post('/login', async (req, res) => {
     } catch (err) { res.status(500).json({ error: "Server Error" }); }
 });
 
-// --- 6. SUBMISSION ROUTE (UPDATED BASE ON YOUR PGADMIN) ---
+// Hanapin ang app.post('/submit-program' at palitan ng BUONG code na ito:
+
 app.post('/submit-program', upload.fields([
     { name: 'id_photo_2x2', maxCount: 1 }, 
     { name: 'doc_coe', maxCount: 1 },
@@ -117,7 +118,7 @@ app.post('/submit-program', upload.fields([
     { name: 'doc_form', maxCount: 1 }, 
     { name: 'doc_billing', maxCount: 1 },
     { name: 'doc_med_cert', maxCount: 1 }, 
-    { name: 'doc_case_study', maxCount: 1 }, 
+    { name: 'doc_case_study', maxCount: 1 }, // Ito yung field name sa HTML mo
     { name: 'doc_patient_id', maxCount: 1 }, 
     { name: 'doc_rep_id', maxCount: 1 },
     { name: 'doc_gov_id', maxCount: 1 }, 
@@ -136,65 +137,30 @@ app.post('/submit-program', upload.fields([
                 father_name, mother_name, father_occ, mother_occ,
                 doc_coe, doc_psa, doc_school_id, doc_billing, doc_med_cert, 
                 doc_social_case, doc_patient_id, doc_rep_id, doc_gov_id, doc_indigency, doc_form,
-                photo_2x2, doc_patient_photo, status, submitted_at
+                photo_2x2, doc_patient_photo, status
             ) VALUES (
                 $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
-                $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, NOW()
+                $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38
             ) RETURNING *`;
 
         const values = [
-            data.user_id || 0, 
-            data.program_type, 
-            data.application_role || 'N/A', 
-            data.first_name, 
-            data.middle_name || '', 
-            data.last_name, 
-            data.dob, 
-            data.age, 
-            data.civil_status, 
-            data.sex, 
-            data.street, 
-            data.barangay, 
-            data.municipality, 
-            data.province, 
-            data.mobile_number, 
-            data.email, 
-            data.gcash || 'N/A', // Match sa column 'gcash'
-            data.school_name || 'N/A', 
-            data.year_level || 'N/A', 
-            data.course || 'N/A', // Match sa column 'course'
-            data.father_name || 'N/A', 
-            data.mother_name || 'N/A', 
-            data.father_occ || 'N/A', 
-            data.mother_occ || 'N/A',
-            getFileName('doc_coe'), 
-            getFileName('doc_psa'), 
-            getFileName('doc_school_id'), 
-            getFileName('doc_billing'), 
-            getFileName('doc_med_cert'),
-            getFileName('doc_case_study'), // Match sa column 'doc_social_case'
-            getFileName('doc_patient_id'), 
-            getFileName('doc_rep_id'), 
-            getFileName('doc_gov_id'), 
-            getFileName('doc_indigency'), 
-            getFileName('doc_form'),
-            getFileName('id_photo_2x2'), // Match sa column 'photo_2x2'
-            getFileName('doc_patient_photo'), 
-            data.status || 'Pending'
+            data.user_id || null, data.program_type, data.application_role || 'N/A', data.first_name, data.middle_name || '', data.last_name, 
+            data.dob || null, data.age ? parseInt(data.age) : null, data.civil_status, data.sex, data.street, data.barangay, data.municipality, data.province, 
+            data.mobile_number, data.email, data.gcash || 'N/A', data.school_name || 'N/A', data.year_level || 'N/A', data.course || 'N/A',
+            data.father_name || 'N/A', data.mother_name || 'N/A', data.father_occ || 'N/A', data.mother_occ || 'N/A',
+            getFileName('doc_coe'), getFileName('doc_psa'), getFileName('doc_school_id'), getFileName('doc_billing'), getFileName('doc_med_cert'),
+            getFileName('doc_case_study'), getFileName('doc_patient_id'), getFileName('doc_rep_id'), getFileName('doc_gov_id'), getFileName('doc_indigency'), getFileName('doc_form'),
+            getFileName('id_photo_2x2'), getFileName('doc_patient_photo'), 
+            'Pending'
         ];
 
         const result = await pool.query(queryText, values);
-        
-        // Notification for admin
-        await pool.query('INSERT INTO notifications (message, status, created_at) VALUES ($1, $2, NOW())', [`${data.first_name} applied for ${data.program_type}.`, 'unread']);
-        
-        res.status(200).json({ message: "Application Sent!", application: result.rows[0] });
-    } catch (err) { 
-        console.error("Database Error:", err.message);
-        res.status(500).json({ error: "Error: " + err.message }); 
+        res.status(200).json({ message: "Success", application: result.rows[0] });
+    } catch (err) {
+        console.error("DETALYE NG ERROR:", err.message); // Lalabas ito sa Render Logs
+        res.status(500).json({ error: err.message });
     }
 });
-
 // --- 7. ADMIN ROUTES ---
 app.get('/applications', async (req, res) => {
     try {
