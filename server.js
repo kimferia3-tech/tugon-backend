@@ -54,10 +54,7 @@ app.use('/uploads', express.static('uploads'));
 
 // --- 4. SOCKET.IO CHAT LOGIC ---
 let activeUsers = new Set();
-
 io.on('connection', (socket) => {
-    console.log('A user connected');
-
     socket.on('join_chat', (data) => {
         if (data.room) {
             socket.join(data.room);
@@ -75,36 +72,18 @@ io.on('connection', (socket) => {
                 [data.room]
             );
             socket.emit('chat_history', result.rows);
-        } catch (err) { console.error("Error loading history:", err); }
+        } catch (err) { console.error("Error history:", err); }
     });
 
     socket.on('send_message', async (data) => {
         try {
-            await pool.query(
-                'INSERT INTO chat_messages (sender, message, room) VALUES ($1, $2, $3)', 
-                [data.sender, data.text, data.room]
-            );
-
-            const realTime = new Date().toLocaleTimeString('en-US', { 
-                hour: '2-digit', 
-                minute: '2-digit',
-                hour12: true 
-            });
-            
-            io.to(data.room).emit('receive_message', { 
-                text: data.text, 
-                sender: data.sender, 
-                time: realTime,
-                room: data.room
-            });
-        } catch (err) { console.error("Error saving/sending message:", err); }
+            await pool.query('INSERT INTO chat_messages (sender, message, room) VALUES ($1, $2, $3)', [data.sender, data.text, data.room]);
+            const realTime = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+            io.to(data.room).emit('receive_message', { text: data.text, sender: data.sender, time: realTime, room: data.room });
+        } catch (err) { console.error("Error sending msg:", err); }
     });
 
     socket.on('typing', (data) => { socket.to(data.room).emit('display_typing', data); });
-    
-    socket.on('disconnect', () => { 
-        console.log('User disconnected'); 
-    });
 });
 
 // --- 5. AUTHENTICATION ROUTES ---
@@ -112,10 +91,7 @@ app.post('/signup', async (req, res) => {
     const { fullname, email, password } = req.body;
     try {
         const hashedPassword = await bcrypt.hash(password, 10);
-        const result = await pool.query(
-            'INSERT INTO users(fullname, email, password) VALUES($1, $2, $3) RETURNING *', 
-            [fullname, email, hashedPassword] 
-        );
+        const result = await pool.query('INSERT INTO users(fullname, email, password) VALUES($1, $2, $3) RETURNING *', [fullname, email, hashedPassword]);
         res.status(200).json({ message: "User registered!", user: result.rows[0] });
     } catch (err) { res.status(500).json({ error: "Database error!" }); }
 });
@@ -125,28 +101,21 @@ app.post('/login', async (req, res) => {
     try {
         const result = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
         if (result.rows.length > 0) {
-            const user = result.rows[0];
-            const isMatch = await bcrypt.compare(password, user.password);
-            if (isMatch) res.status(200).json({ message: "Login successful", user: user });
+            const isMatch = await bcrypt.compare(password, result.rows[0].password);
+            if (isMatch) res.status(200).json({ message: "Login successful", user: result.rows[0] });
             else res.status(401).json({ error: "Invalid credentials!" });
         } else res.status(401).json({ error: "Invalid credentials!" });
     } catch (err) { res.status(500).json({ error: "Server Error" }); }
 });
 
-// --- 6. SUBMISSION ROUTE (FIXED FOR ALL PROGRAMS) ---
+// --- 6. SUBMISSION ROUTE ---
 app.post('/submit-program', upload.fields([
-    { name: 'id_photo_2x2', maxCount: 1 },
-    { name: 'doc_coe', maxCount: 1 },
-    { name: 'doc_psa', maxCount: 1 },
-    { name: 'doc_school_id', maxCount: 1 },
-    { name: 'doc_form', maxCount: 1 },
-    { name: 'doc_billing', maxCount: 1 },
-    { name: 'doc_med_cert', maxCount: 1 },
-    { name: 'doc_social_case', maxCount: 1 },
-    { name: 'doc_patient_id', maxCount: 1 },
-    { name: 'doc_rep_id', maxCount: 1 },
-    { name: 'doc_gov_id', maxCount: 1 },
-    { name: 'doc_indigency', maxCount: 1 },
+    { name: 'id_photo_2x2', maxCount: 1 }, { name: 'doc_coe', maxCount: 1 },
+    { name: 'doc_psa', maxCount: 1 }, { name: 'doc_school_id', maxCount: 1 },
+    { name: 'doc_form', maxCount: 1 }, { name: 'doc_billing', maxCount: 1 },
+    { name: 'doc_med_cert', maxCount: 1 }, { name: 'doc_social_case', maxCount: 1 },
+    { name: 'doc_patient_id', maxCount: 1 }, { name: 'doc_rep_id', maxCount: 1 },
+    { name: 'doc_gov_id', maxCount: 1 }, { name: 'doc_indigency', maxCount: 1 },
     { name: 'doc_patient_photo', maxCount: 1 }
 ]), async (req, res) => {
     const data = req.body;
@@ -178,36 +147,17 @@ app.post('/submit-program', upload.fields([
         ];
 
         const result = await pool.query(queryText, values);
-        
-        await pool.query(
-            'INSERT INTO notifications (message, status, created_at) VALUES ($1, $2, NOW())',
-            [`${data.first_name} applied for ${data.program_type}.`, 'unread']
-        );
-        
+        await pool.query('INSERT INTO notifications (message, status, created_at) VALUES ($1, $2, NOW())', [`${data.first_name} applied for ${data.program_type}.`, 'unread']);
         res.status(200).json({ message: "Application Sent!", application: result.rows[0] });
-    } catch (err) {
-        console.error("Database Save Error:", err.message);
-        res.status(500).json({ error: "Submission Error: " + err.message });
-    }
+    } catch (err) { res.status(500).json({ error: "Error: " + err.message }); }
 });
 
-// --- 7. ADMIN & USER DATA ROUTES ---
+// --- 7. ADMIN ROUTES ---
 app.get('/applications', async (req, res) => {
     try {
         const result = await pool.query("SELECT *, TO_CHAR(created_at, 'Mon DD, YYYY') as date FROM submitted_programs ORDER BY created_at DESC");
         res.status(200).json(result.rows);
-    } catch (err) { res.status(500).json({ error: "Error fetching applications" }); }
-});
-
-app.get('/student/my-applications', async (req, res) => {
-    const { email } = req.query; 
-    try {
-        const result = await pool.query(
-            "SELECT id, program_type, status, TO_CHAR(created_at, 'Mon DD, YYYY') as date_applied FROM submitted_programs WHERE email = $1 ORDER BY created_at DESC",
-            [email]
-        );
-        res.status(200).json(result.rows);
-    } catch (err) { res.status(500).json({ error: "Error fetching user records" }); }
+    } catch (err) { res.status(500).json({ error: "Error" }); }
 });
 
 app.patch('/applications/:id', async (req, res) => {
@@ -215,29 +165,12 @@ app.patch('/applications/:id', async (req, res) => {
     const { status } = req.body;
     try {
         const result = await pool.query('UPDATE submitted_programs SET status = $1 WHERE id = $2 RETURNING *', [status, id]);
-        
         if (result.rows.length > 0) {
-            await pool.query(
-                'INSERT INTO notifications (message, status, created_at) VALUES ($1, $2, NOW())',
-                [`Application #${id} is now ${status}.`, 'unread']
-            );
-            res.status(200).json({ message: "Status updated!", data: result.rows[0] });
-        } else {
-            res.status(404).json({ error: "Application not found" });
-        }
-    } catch (err) { 
-        console.error("Update error:", err);
-        res.status(500).json({ error: "Failed update" }); 
-    }
+            await pool.query('INSERT INTO notifications (message, status, created_at) VALUES ($1, $2, NOW())', [`Application #${id} is now ${status}.`, 'unread']);
+            res.status(200).json({ message: "Updated!", data: result.rows[0] });
+        } else res.status(404).json({ error: "Not found" });
+    } catch (err) { res.status(500).json({ error: "Failed" }); }
 });
 
-app.get('/notifications', async (req, res) => {
-    try {
-        const result = await pool.query('SELECT * FROM notifications ORDER BY created_at DESC');
-        res.status(200).json(result.rows);
-    } catch (err) { res.status(500).json({ error: "Error" }); }
-});
-
-// --- 8. START SERVER ---
 const PORT = process.env.PORT || 3000; 
 server.listen(PORT, () => { console.log(`Server running on port ${PORT}`); });
