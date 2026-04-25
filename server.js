@@ -54,38 +54,79 @@ app.use('/uploads', express.static('uploads'));
 
 // --- 4. SOCKET.IO CHAT LOGIC ---
 let activeUsers = new Set();
+
 io.on('connection', (socket) => {
-    socket.on('join_chat', (data) => {
+    // 1. JOIN ROOM & UPDATE USER LIST
+    socket.on('join_chat', async (data) => {
         if (data.room) {
             socket.join(data.room);
+            
+            // Kung hindi Admin/General, ibig sabihin Student email ito
             if (data.room !== 'Admin' && data.room !== 'General') {
                 activeUsers.add(data.room);
+                // I-broadcast ang updated list para makita ni Admin sa sidebar
                 io.emit('update_user_list', Array.from(activeUsers));
             }
         }
     });
 
+    // 2. REQUEST USER LIST (Para pag nag-refresh si Admin, makuha ulet ang names)
+    socket.on('request_user_list', () => {
+        socket.emit('update_user_list', Array.from(activeUsers));
+    });
+
+    // 3. GET CHAT HISTORY (Fixing the persistent load)
     socket.on('get_chat_history', async (data) => {
         try {
+            // Ginamit ko ang column name na 'message' base sa screenshot mo ng DB
             const result = await pool.query(
                 "SELECT sender, message as text, TO_CHAR(created_at, 'HH12:MI AM') as time FROM chat_messages WHERE room = $1 ORDER BY created_at ASC",
                 [data.room]
             );
             socket.emit('chat_history', result.rows);
-        } catch (err) { console.error("Error history:", err); }
+        } catch (err) { 
+            console.error("Error fetching history:", err); 
+        }
     });
 
+    // 4. SEND MESSAGE (Fixing the Save-to-DB logic)
     socket.on('send_message', async (data) => {
         try {
-            await pool.query('INSERT INTO chat_messages (sender, message, room) VALUES ($1, $2, $3)', [data.sender, data.text, data.room]);
-            const realTime = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
-            io.to(data.room).emit('receive_message', { text: data.text, sender: data.sender, time: realTime, room: data.room });
-        } catch (err) { console.error("Error sending msg:", err); }
+            // I-save muna sa Database
+            // TANDAAN: 'message' ang column name mo, hindi 'text'
+            await pool.query(
+                'INSERT INTO chat_messages (sender, message, room, created_at) VALUES ($1, $2, $3, NOW())', 
+                [data.sender, data.text, data.room]
+            );
+
+            // Kuhanin ang exact time para sa real-time display
+            const realTime = new Date().toLocaleTimeString('en-US', { 
+                hour: '2-digit', 
+                minute: '2-digit', 
+                hour12: true 
+            });
+
+            // I-send sa lahat ng nasa room (kasama na si sender)
+            io.to(data.room).emit('receive_message', { 
+                text: data.text, 
+                sender: data.sender, 
+                time: realTime, 
+                room: data.room 
+            });
+        } catch (err) { 
+            console.error("Error saving/sending msg:", err); 
+        }
     });
 
-    socket.on('typing', (data) => { socket.to(data.room).emit('display_typing', data); });
-});
+    socket.on('typing', (data) => { 
+        socket.to(data.room).emit('display_typing', data); 
+    });
 
+    // Tanggalin ang user sa listahan pag nag-disconnect (Optional)
+    socket.on('disconnect', () => {
+        // Pwede mong hayaan lang para hindi mawala yung history sa sidebar ni admin
+    });
+});
 // --- 5. AUTHENTICATION ROUTES ---
 app.post('/signup', async (req, res) => {
     const { fullname, email, password } = req.body;
