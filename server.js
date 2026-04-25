@@ -34,9 +34,9 @@ pool.connect((err, client, release) => {
     release();
 });
 
-// --- HELPER FUNCTION: SEMAPHORE SMS ---
+// --- HELPER FUNCTION: SEMAPHORE SMS (UPDATED) ---
 async function sendTugonSMS(number, name, program, status) {
-    const SEMAPHORE_API_KEY = 'd43c5bf7364757e6d07c86c9d4b5f659'; // API Key is integrated
+    const SEMAPHORE_API_KEY = 'd43c5bf7364757e6d07c86c9d4b5f659'; 
     
     const message = status.toLowerCase() === 'approved' 
         ? `Hi ${name}! Good news mula sa TUGON. Ang iyong application para sa ${program} ay APPROVED na. Pakicheck ang iyong portal.` 
@@ -47,11 +47,10 @@ async function sendTugonSMS(number, name, program, status) {
             apikey: SEMAPHORE_API_KEY,
             number: number,
             message: message,
-            sendername: 'SEMAPHORE'
+            sendername: '' // Iniwan nating empty para default ang gamitin at iwas "Invalid senderName" error
         });
         console.log(`SMS Status para kay ${name}:`, response.data);
     } catch (error) {
-        // Lalabas dito ang "Insufficient Credits" kapag 0 ang load
         console.error('SMS Debug Error:', error.response ? error.response.data : error.message);
     }
 }
@@ -235,12 +234,10 @@ app.get('/applications/rejected', async (req, res) => {
     } catch (err) { res.status(500).json({ error: "Error fetching rejected list" }); }
 });
 
-// --- UPDATED PATCH ROUTE WITH SMS TRIGGER ---
 app.patch('/applications/:id', async (req, res) => {
     const { id } = req.params;
     const { status } = req.body;
     try {
-        // Returning first_name and mobile_number for SMS function
         const result = await pool.query(
             'UPDATE submitted_programs SET status = $1 WHERE id = $2 RETURNING user_id, program_type, first_name, mobile_number', 
             [status, id]
@@ -250,13 +247,11 @@ app.patch('/applications/:id', async (req, res) => {
             const applicant = result.rows[0];
             const notificationMsg = `Application #${id} for ${applicant.program_type} is now ${status}.`;
 
-            // UI notification update
             await pool.query(
                 'INSERT INTO notifications (user_id, message, status, created_at) VALUES ($1, $2, $3, NOW())', 
                 [applicant.user_id, notificationMsg, 'unread']
             );
             
-            // Triggering Semaphore SMS
             if (applicant.mobile_number) {
                 sendTugonSMS(
                     applicant.mobile_number, 
