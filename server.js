@@ -202,3 +202,31 @@ app.patch('/applications/:id', async (req, res) => {
 
 const PORT = process.env.PORT || 3000; 
 server.listen(PORT, () => { console.log(`Server running on port ${PORT}`); });
+// --- 8. PROGRAM DISPATCHER LOGIC ---
+
+// I-save ang bagong program mula sa Admin Dashboard
+app.post('/api/programs', async (req, res) => {
+    const { title, slots, launchDate } = req.body;
+    try {
+        const result = await pool.query(
+            'INSERT INTO programs (title, slots, launch_date) VALUES ($1, $2, $3) RETURNING *',
+            [title, slots, launchDate]
+        );
+        // I-notify ang lahat ng users na may bagong program (Real-time)
+        io.emit('new_program_published', result.rows[0]); 
+        res.status(200).json({ message: "Program Published!", program: result.rows[0] });
+    } catch (err) {
+        console.error("Error publishing program:", err.message);
+        res.status(500).json({ error: "Failed to publish program" });
+    }
+});
+
+// Kunin lahat ng programs para ipakita sa Available Services
+app.get('/api/programs', async (req, res) => {
+    try {
+        const result = await pool.query('SELECT * FROM programs ORDER BY created_at DESC');
+        res.status(200).json(result.rows);
+    } catch (err) {
+        res.status(500).json({ error: "Error fetching programs" });
+    }
+});
