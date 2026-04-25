@@ -56,29 +56,22 @@ app.use('/uploads', express.static('uploads'));
 let activeUsers = new Set();
 
 io.on('connection', (socket) => {
-    // 1. JOIN ROOM & UPDATE USER LIST
     socket.on('join_chat', async (data) => {
         if (data.room) {
             socket.join(data.room);
-            
-            // Kung hindi Admin/General, ibig sabihin Student email ito
             if (data.room !== 'Admin' && data.room !== 'General') {
                 activeUsers.add(data.room);
-                // I-broadcast ang updated list para makita ni Admin sa sidebar
                 io.emit('update_user_list', Array.from(activeUsers));
             }
         }
     });
 
-    // 2. REQUEST USER LIST (Para pag nag-refresh si Admin, makuha ulet ang names)
     socket.on('request_user_list', () => {
         socket.emit('update_user_list', Array.from(activeUsers));
     });
 
-    // 3. GET CHAT HISTORY (Fixing the persistent load)
     socket.on('get_chat_history', async (data) => {
         try {
-            // Ginamit ko ang column name na 'message' base sa screenshot mo ng DB
             const result = await pool.query(
                 "SELECT sender, message as text, TO_CHAR(created_at, 'HH12:MI AM') as time FROM chat_messages WHERE room = $1 ORDER BY created_at ASC",
                 [data.room]
@@ -89,24 +82,19 @@ io.on('connection', (socket) => {
         }
     });
 
-    // 4. SEND MESSAGE (Fixing the Save-to-DB logic)
     socket.on('send_message', async (data) => {
         try {
-            // I-save muna sa Database
-            // TANDAAN: 'message' ang column name mo, hindi 'text'
             await pool.query(
                 'INSERT INTO chat_messages (sender, message, room, created_at) VALUES ($1, $2, $3, NOW())', 
                 [data.sender, data.text, data.room]
             );
 
-            // Kuhanin ang exact time para sa real-time display
             const realTime = new Date().toLocaleTimeString('en-US', { 
                 hour: '2-digit', 
                 minute: '2-digit', 
                 hour12: true 
             });
 
-            // I-send sa lahat ng nasa room (kasama na si sender)
             io.to(data.room).emit('receive_message', { 
                 text: data.text, 
                 sender: data.sender, 
@@ -122,11 +110,9 @@ io.on('connection', (socket) => {
         socket.to(data.room).emit('display_typing', data); 
     });
 
-    // Tanggalin ang user sa listahan pag nag-disconnect (Optional)
-    socket.on('disconnect', () => {
-        // Pwede mong hayaan lang para hindi mawala yung history sa sidebar ni admin
-    });
+    socket.on('disconnect', () => {});
 });
+
 // --- 5. AUTHENTICATION ROUTES ---
 app.post('/signup', async (req, res) => {
     const { fullname, email, password } = req.body;
@@ -205,7 +191,6 @@ app.post('/submit-program', upload.fields([
 
 // --- 7. ADMIN ROUTES ---
 
-// Main dashboard list
 app.get('/applications', async (req, res) => {
     try {
         const result = await pool.query("SELECT *, TO_CHAR(submitted_at, 'Mon DD, YYYY') as date FROM submitted_programs ORDER BY submitted_at DESC");
@@ -213,7 +198,6 @@ app.get('/applications', async (req, res) => {
     } catch (err) { res.status(500).json({ error: "Error" }); }
 });
 
-// NEW: Kuhanin lahat ng Approved para sa Payout Checklist
 app.get('/applications/approved', async (req, res) => {
     try {
         const result = await pool.query("SELECT id, first_name, last_name, mobile_number, gcash, status FROM submitted_programs WHERE status = 'Approved' ORDER BY submitted_at DESC");
@@ -221,7 +205,6 @@ app.get('/applications/approved', async (req, res) => {
     } catch (err) { res.status(500).json({ error: "Error fetching approved list" }); }
 });
 
-// NEW: Kuhanin lahat ng Rejected para sa History
 app.get('/applications/rejected', async (req, res) => {
     try {
         const result = await pool.query("SELECT id, first_name, last_name, program_type, status FROM submitted_programs WHERE status = 'Rejected' ORDER BY submitted_at DESC");
@@ -229,23 +212,54 @@ app.get('/applications/rejected', async (req, res) => {
     } catch (err) { res.status(500).json({ error: "Error fetching rejected list" }); }
 });
 
+// UPDATED: Patch Route with proper user_id for notifications
 app.patch('/applications/:id', async (req, res) => {
     const { id } = req.params;
     const { status } = req.body;
     try {
-        const result = await pool.query('UPDATE submitted_programs SET status = $1 WHERE id = $2 RETURNING *', [status, id]);
+        // Query results now return user_id and program_type to use for notification message
+        const result = await pool.query('UPDATE submitted_programs SET status = $1 WHERE id = $2 RETURNING user_id, program_type', [status, id]);
+        
         if (result.rows.length > 0) {
-            await pool.query('INSERT INTO notifications (message, status, created_at) VALUES ($1, $2, NOW())', [`Application #${id} is now ${status}.`, 'unread']);
+            const applicantId = result.rows[0].user_id;
+            const programName = result.rows[0].program_type;
+            const notificationMsg = `Application #${id} for ${programName} is now ${status}.`;
+
+            // Insert into the new notifications table structure
+            await pool.query(
+                'INSERT INTO notifications (user_id, message, status, created_at) VALUES ($1, $2, $3, NOW())', 
+                [applicantId, notificationMsg, 'unread']
+            );
+            
             res.status(200).json({ message: "Updated!", data: result.rows[0] });
-        } else res.status(404).json({ error: "Not found" });
-    } catch (err) { res.status(500).json({ error: "Failed" }); }
+        } else {
+            res.status(404).json({ error: "Not found" });
+        }
+    } catch (err) { 
+        console.error(err);
+        res.status(500).json({ error: "Failed to update and notify" }); 
+    }
+});
+
+// NEW: Endpoint to fetch notifications for a specific user
+app.get('/api/notifications/:userId', async (req, res) => {
+    const { userId } = req.params;
+    try {
+        const result = await pool.query(
+            'SELECT *, TO_CHAR(created_at, "Mon DD, HH:MI AM") as time FROM notifications WHERE user_id = $1 ORDER BY created_at DESC', 
+            [userId]
+        );
+        res.status(200).json(result.rows);
+    } catch (err) {
+        res.status(500).json({ error: "Error fetching notifications" });
+    }
 });
 
 const PORT = process.env.PORT || 3000; 
 server.listen(PORT, () => { console.log(`Server running on port ${PORT}`); });
+
 // --- 8. PROGRAM DISPATCHER LOGIC ---
 
-// I-save ang bagong program mula sa Admin Dashboard
 app.post('/api/programs', async (req, res) => {
     const { title, slots, launchDate } = req.body;
     try {
@@ -253,7 +267,6 @@ app.post('/api/programs', async (req, res) => {
             'INSERT INTO programs (title, slots, launch_date) VALUES ($1, $2, $3) RETURNING *',
             [title, slots, launchDate]
         );
-        // I-notify ang lahat ng users na may bagong program (Real-time)
         io.emit('new_program_published', result.rows[0]); 
         res.status(200).json({ message: "Program Published!", program: result.rows[0] });
     } catch (err) {
@@ -262,7 +275,6 @@ app.post('/api/programs', async (req, res) => {
     }
 });
 
-// Kunin lahat ng programs para ipakita sa Available Services
 app.get('/api/programs', async (req, res) => {
     try {
         const result = await pool.query('SELECT * FROM programs ORDER BY created_at DESC');
