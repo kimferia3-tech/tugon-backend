@@ -117,7 +117,7 @@ app.post('/submit-program', upload.fields([
     { name: 'doc_form', maxCount: 1 }, 
     { name: 'doc_billing', maxCount: 1 },
     { name: 'doc_med_cert', maxCount: 1 }, 
-    { name: 'doc_case_study', maxCount: 1 }, // Map ito sa doc_social_case sa database
+    { name: 'doc_case_study', maxCount: 1 }, 
     { name: 'doc_patient_id', maxCount: 1 }, 
     { name: 'doc_rep_id', maxCount: 1 },
     { name: 'doc_gov_id', maxCount: 1 }, 
@@ -154,7 +154,7 @@ app.post('/submit-program', upload.fields([
         ];
 
         const result = await pool.query(queryText, values);
-        io.emit('newApplication'); // Notify admin real-time
+        io.emit('newApplication'); 
         res.status(200).json({ message: "Success", application: result.rows[0] });
     } catch (err) {
         console.error("DETALYE NG ERROR:", err.message);
@@ -163,11 +163,29 @@ app.post('/submit-program', upload.fields([
 });
 
 // --- 7. ADMIN ROUTES ---
+
+// Main dashboard list
 app.get('/applications', async (req, res) => {
     try {
         const result = await pool.query("SELECT *, TO_CHAR(submitted_at, 'Mon DD, YYYY') as date FROM submitted_programs ORDER BY submitted_at DESC");
         res.status(200).json(result.rows);
     } catch (err) { res.status(500).json({ error: "Error" }); }
+});
+
+// NEW: Kuhanin lahat ng Approved para sa Payout Checklist
+app.get('/applications/approved', async (req, res) => {
+    try {
+        const result = await pool.query("SELECT id, first_name, last_name, mobile_number, gcash, status FROM submitted_programs WHERE status = 'Approved' ORDER BY submitted_at DESC");
+        res.status(200).json(result.rows);
+    } catch (err) { res.status(500).json({ error: "Error fetching approved list" }); }
+});
+
+// NEW: Kuhanin lahat ng Rejected para sa History
+app.get('/applications/rejected', async (req, res) => {
+    try {
+        const result = await pool.query("SELECT id, first_name, last_name, program_type, status FROM submitted_programs WHERE status = 'Rejected' ORDER BY submitted_at DESC");
+        res.status(200).json(result.rows);
+    } catch (err) { res.status(500).json({ error: "Error fetching rejected list" }); }
 });
 
 app.patch('/applications/:id', async (req, res) => {
