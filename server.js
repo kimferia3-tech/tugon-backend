@@ -108,8 +108,7 @@ app.post('/login', async (req, res) => {
     } catch (err) { res.status(500).json({ error: "Server Error" }); }
 });
 
-// Hanapin ang app.post('/submit-program' at palitan ng BUONG code na ito:
-
+// --- 6. SUBMIT PROGRAM LOGIC ---
 app.post('/submit-program', upload.fields([
     { name: 'id_photo_2x2', maxCount: 1 }, 
     { name: 'doc_coe', maxCount: 1 },
@@ -118,7 +117,7 @@ app.post('/submit-program', upload.fields([
     { name: 'doc_form', maxCount: 1 }, 
     { name: 'doc_billing', maxCount: 1 },
     { name: 'doc_med_cert', maxCount: 1 }, 
-    { name: 'doc_case_study', maxCount: 1 }, // Ito yung field name sa HTML mo
+    { name: 'doc_case_study', maxCount: 1 }, // Map ito sa doc_social_case sa database
     { name: 'doc_patient_id', maxCount: 1 }, 
     { name: 'doc_rep_id', maxCount: 1 },
     { name: 'doc_gov_id', maxCount: 1 }, 
@@ -155,12 +154,14 @@ app.post('/submit-program', upload.fields([
         ];
 
         const result = await pool.query(queryText, values);
+        io.emit('newApplication'); // Notify admin real-time
         res.status(200).json({ message: "Success", application: result.rows[0] });
     } catch (err) {
-        console.error("DETALYE NG ERROR:", err.message); // Lalabas ito sa Render Logs
+        console.error("DETALYE NG ERROR:", err.message);
         res.status(500).json({ error: err.message });
     }
 });
+
 // --- 7. ADMIN ROUTES ---
 app.get('/applications', async (req, res) => {
     try {
