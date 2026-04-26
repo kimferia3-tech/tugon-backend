@@ -34,24 +34,28 @@ pool.connect((err, client, release) => {
     release();
 });
 
-// --- HELPER FUNCTION: SEMAPHORE SMS (QUERY PARAMS VERSION) ---
+// --- HELPER FUNCTION: SEMAPHORE SMS (FIXED VERSION) ---
 async function sendTugonSMS(number, name, program, status) {
     const SEMAPHORE_API_KEY = 'd43c5bf7364757e6d07c86c9d4b5f659'; 
     
+    // 1. Linisin ang number: Tatanggalin ang lahat ng non-digit characters (spaces, dashes, etc.)
+    const cleanNumber = number.replace(/\D/g, ''); 
+
     const message = status.toLowerCase() === 'approved' 
         ? `Hi ${name}! Good news mula sa TUGON. Ang iyong application para sa ${program} ay APPROVED na. Pakicheck ang iyong portal.` 
         : `Hi ${name}. Mula sa TUGON: Paumanhin, ang iyong application para sa ${program} ay REJECTED. Salamat sa pag-apply.`;
 
     try {
-        // Ginamit ang params approach para i-force ang default sendername ng Semaphore
-        const response = await axios.post('https://api.semaphore.co/api/v4/messages', null, {
-            params: {
-                apikey: SEMAPHORE_API_KEY,
-                number: number,
-                message: message
-            }
-        });
-        console.log(`SMS Status para kay ${name}:`, response.data);
+        // 2. Ginamit ang URLSearchParams para i-force ang 3 specific fields lang (apikey, number, message)
+        // Ito ay para maiwasan ang "No active sender name found" error
+        const params = new URLSearchParams();
+        params.append('apikey', SEMAPHORE_API_KEY);
+        params.append('number', cleanNumber);
+        params.append('message', message);
+
+        const response = await axios.post('https://api.semaphore.co/api/v4/messages', params);
+        
+        console.log(`SMS Status para kay ${name} (${cleanNumber}):`, response.data);
     } catch (error) {
         console.error('SMS Debug Error:', error.response ? error.response.data : error.message);
     }
@@ -255,6 +259,7 @@ app.patch('/applications/:id', async (req, res) => {
             );
             
             if (applicant.mobile_number) {
+                // Tatawagin ang fixed function
                 sendTugonSMS(
                     applicant.mobile_number, 
                     applicant.first_name, 
