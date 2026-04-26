@@ -34,32 +34,6 @@ pool.connect((err, client, release) => {
     release();
 });
 
-// --- HELPER FUNCTION: SEMAPHORE SMS (EMERGENCY GET METHOD) ---
-async function sendTugonSMS(number, name, program, status) {
-    const SEMAPHORE_API_KEY = 'd43c5bf7364757e6d07c86c9d4b5f659'; 
-    
-    // 1. Linisin ang number (no spaces/dashes)
-    const cleanNumber = number.replace(/\D/g, ''); 
-
-    const message = status.toLowerCase() === 'approved' 
-        ? `Hi ${name}! Good news mula sa TUGON. Ang iyong application para sa ${program} ay APPROVED na. Pakicheck ang iyong portal.` 
-        : `Hi ${name}. Mula sa TUGON: Paumanhin, ang iyong application para sa ${program} ay REJECTED. Salamat sa pag-apply.`;
-
-    const encodedMessage = encodeURIComponent(message);
-
-    // 2. ISAKSAK NATIN ANG SENDERNAME=SEMAPHORE SA URL PARA PWERSAHAN
-    // Gagamit tayo ng axios.get dahil mas reliable ang GET sa mga ganitong "No sender name" error
-    const apiUrl = `https://api.semaphore.co/api/v4/messages?apikey=${SEMAPHORE_API_KEY}&number=${cleanNumber}&message=${encodedMessage}&sendername=SEMAPHORE`;
-
-    try {
-        const response = await axios.get(apiUrl);
-        console.log(`SMS Sent Success to ${name}:`, response.data);
-    } catch (error) {
-        // Log para sa demo reference kung sakaling mag-fail ang external API
-        console.error('SMS FINAL ATTEMPT ERROR:', error.response ? error.response.data : error.message);
-    }
-}
-
 // --- 2. MULTER CONFIG ---
 const storage = multer.diskStorage({
     destination: './uploads/',
@@ -257,17 +231,9 @@ app.patch('/applications/:id', async (req, res) => {
                 [applicant.user_id, notificationMsg, 'unread']
             );
             
-            if (applicant.mobile_number) {
-                // Tatawagin ang updated function na may sendername support
-                sendTugonSMS(
-                    applicant.mobile_number, 
-                    applicant.first_name, 
-                    applicant.program_type, 
-                    status
-                );
-            }
+            // SMS FUNCTION REMOVED TO PREVENT RENDER ERRORS DURING DEMO
             
-            res.status(200).json({ message: "Updated and SMS triggered!", data: applicant });
+            res.status(200).json({ message: "Updated and Notification saved!", data: applicant });
         } else {
             res.status(404).json({ error: "Not found" });
         }
@@ -316,5 +282,5 @@ app.get('/api/programs', async (req, res) => {
     }
 });
 
-const PORT = process.env.PORT || 3000; 
+const PORT = process.env.PORT || 10000; 
 server.listen(PORT, () => { console.log(`Server running on port ${PORT}`); });
