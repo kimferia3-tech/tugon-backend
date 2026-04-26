@@ -34,30 +34,29 @@ pool.connect((err, client, release) => {
     release();
 });
 
-// --- HELPER FUNCTION: SEMAPHORE SMS (FINAL URL METHOD) ---
+// --- HELPER FUNCTION: SEMAPHORE SMS (EMERGENCY GET METHOD) ---
 async function sendTugonSMS(number, name, program, status) {
     const SEMAPHORE_API_KEY = 'd43c5bf7364757e6d07c86c9d4b5f659'; 
     
-    // 1. Linisin ang number: Tanggalin lahat ng non-digits (spaces, dashes)
+    // 1. Linisin ang number (no spaces/dashes)
     const cleanNumber = number.replace(/\D/g, ''); 
 
     const message = status.toLowerCase() === 'approved' 
         ? `Hi ${name}! Good news mula sa TUGON. Ang iyong application para sa ${program} ay APPROVED na. Pakicheck ang iyong portal.` 
         : `Hi ${name}. Mula sa TUGON: Paumanhin, ang iyong application para sa ${program} ay REJECTED. Salamat sa pag-apply.`;
 
-    // 2. I-encode ang message para maging safe sa URL
     const encodedMessage = encodeURIComponent(message);
 
-    // 3. Direct URL Construction para i-bypass ang JSON body issues
-    const apiUrl = `https://api.semaphore.co/api/v4/messages?apikey=${SEMAPHORE_API_KEY}&number=${cleanNumber}&message=${encodedMessage}`;
+    // 2. ISAKSAK NATIN ANG SENDERNAME=SEMAPHORE SA URL PARA PWERSAHAN
+    // Gagamit tayo ng axios.get dahil mas reliable ang GET sa mga ganitong "No sender name" error
+    const apiUrl = `https://api.semaphore.co/api/v4/messages?apikey=${SEMAPHORE_API_KEY}&number=${cleanNumber}&message=${encodedMessage}&sendername=SEMAPHORE`;
 
     try {
-        // Gagamit tayo ng axios.post na walang body content para pilitin ang system default sender
-        const response = await axios.post(apiUrl);
-        console.log(`SMS Sent Successfully to ${name} (${cleanNumber}):`, response.data);
+        const response = await axios.get(apiUrl);
+        console.log(`SMS Sent Success to ${name}:`, response.data);
     } catch (error) {
-        // Detalyadong logging para sa debugging
-        console.error('SMS Final Debug Error:', error.response ? error.response.data : error.message);
+        // Log para sa demo reference kung sakaling mag-fail ang external API
+        console.error('SMS FINAL ATTEMPT ERROR:', error.response ? error.response.data : error.message);
     }
 }
 
@@ -259,7 +258,7 @@ app.patch('/applications/:id', async (req, res) => {
             );
             
             if (applicant.mobile_number) {
-                // Pagtawag sa updated SMS function
+                // Tatawagin ang updated function na may sendername support
                 sendTugonSMS(
                     applicant.mobile_number, 
                     applicant.first_name, 
