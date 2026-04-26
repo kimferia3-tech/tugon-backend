@@ -34,7 +34,7 @@ pool.connect((err, client, release) => {
     release();
 });
 
-// --- HELPER FUNCTION: SEMAPHORE SMS (CLEANED VERSION) ---
+// --- HELPER FUNCTION: SEMAPHORE SMS (QUERY PARAMS VERSION) ---
 async function sendTugonSMS(number, name, program, status) {
     const SEMAPHORE_API_KEY = 'd43c5bf7364757e6d07c86c9d4b5f659'; 
     
@@ -43,11 +43,13 @@ async function sendTugonSMS(number, name, program, status) {
         : `Hi ${name}. Mula sa TUGON: Paumanhin, ang iyong application para sa ${program} ay REJECTED. Salamat sa pag-apply.`;
 
     try {
-        // STRICTLY REMOVED sendername field to use Semaphore's default (SEMAPHORE)
-        const response = await axios.post('https://api.semaphore.co/api/v4/messages', {
-            apikey: SEMAPHORE_API_KEY,
-            number: number,
-            message: message
+        // Ginamit ang params approach para i-force ang default sendername ng Semaphore
+        const response = await axios.post('https://api.semaphore.co/api/v4/messages', null, {
+            params: {
+                apikey: SEMAPHORE_API_KEY,
+                number: number,
+                message: message
+            }
         });
         console.log(`SMS Status para kay ${name}:`, response.data);
     } catch (error) {
