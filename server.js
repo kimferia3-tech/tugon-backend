@@ -6,7 +6,7 @@ const http = require('http');
 const { Server } = require('socket.io');
 const multer = require('multer');
 const bcrypt = require('bcryptjs');
-const axios = require('axios'); // Kailangan para sa SMS API
+const axios = require('axios');
 
 const app = express();
 const server = http.createServer(app); 
@@ -34,7 +34,7 @@ pool.connect((err, client, release) => {
     release();
 });
 
-// --- HELPER FUNCTION: SEMAPHORE SMS (UPDATED TO REMOVE SENDERNAME) ---
+// --- HELPER FUNCTION: SEMAPHORE SMS (CLEANED VERSION) ---
 async function sendTugonSMS(number, name, program, status) {
     const SEMAPHORE_API_KEY = 'd43c5bf7364757e6d07c86c9d4b5f659'; 
     
@@ -43,7 +43,7 @@ async function sendTugonSMS(number, name, program, status) {
         : `Hi ${name}. Mula sa TUGON: Paumanhin, ang iyong application para sa ${program} ay REJECTED. Salamat sa pag-apply.`;
 
     try {
-        // Inalis na ang sendername dito para gumamit ng default ang Semaphore
+        // STRICTLY REMOVED sendername field to use Semaphore's default (SEMAPHORE)
         const response = await axios.post('https://api.semaphore.co/api/v4/messages', {
             apikey: SEMAPHORE_API_KEY,
             number: number,
