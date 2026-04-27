@@ -7,6 +7,7 @@ const { Server } = require('socket.io');
 const multer = require('multer');
 const bcrypt = require('bcryptjs');
 const axios = require('axios');
+const nodemailer = require('nodemailer'); // Added Nodemailer
 
 const app = express();
 const server = http.createServer(app); 
@@ -32,6 +33,15 @@ pool.connect((err, client, release) => {
     if (err) return console.error('Error connecting to database:', err.stack);
     console.log('Successfully connected to Render PostgreSQL!');
     release();
+});
+
+// --- EMAIL CONFIGURATION ---
+const transporter = nodemailer.createTransport({
+    service: 'gmail',
+    auth: {
+        user: 'micx@gmail.com', // Siguraduhin na ito ang tamang Gmail mo
+        pass: 'xdia bxph jyna lsf'  // Ang iyong 16-digit App Password
+    }
 });
 
 // --- 2. MULTER CONFIG ---
@@ -127,12 +137,10 @@ app.post('/signup', async (req, res) => {
 app.post('/login', async (req, res) => {
     const { email, password } = req.body;
     try {
-        // 1. Check muna sa 'users' table
         let result = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
         let userFound = result.rows[0];
         let isAdmin = false;
 
-        // 2. Kung wala sa users, check naman sa 'admins' table
         if (!userFound) {
             result = await pool.query('SELECT * FROM admins WHERE email = $1', [email]);
             userFound = result.rows[0];
@@ -140,20 +148,14 @@ app.post('/login', async (req, res) => {
         }
 
         if (userFound) {
-            // I-verify ang password
-            // Note: Dahil sa SQL INSERT natin plain text ang nilagay, 
-            // gumamit muna tayo ng conditional para sa plain text o hashed.
             let isMatch = false;
             if (isAdmin) {
-                // Kung admin at plain text pa ang test data natin:
                 isMatch = (password === userFound.password);
             } else {
-                // Kung user, gumagamit ka ng bcrypt hashing sa signup:
                 isMatch = await bcrypt.compare(password, userFound.password);
             }
 
             if (isMatch) {
-                // I-normalize natin ang response data
                 res.status(200).json({ 
                     message: "Login successful", 
                     user: {
@@ -256,23 +258,36 @@ app.patch('/applications/:id', async (req, res) => {
     const { id } = req.params;
     const { status } = req.body;
     try {
+        // Updated query to also return EMAIL
         const result = await pool.query(
-            'UPDATE submitted_programs SET status = $1 WHERE id = $2 RETURNING user_id, program_type, first_name, mobile_number', 
+            'UPDATE submitted_programs SET status = $1 WHERE id = $2 RETURNING user_id, program_type, first_name, email', 
             [status, id]
         );
         
         if (result.rows.length > 0) {
             const applicant = result.rows[0];
-            const notificationMsg = `Application #${id} for ${applicant.program_type} is now ${status}.`;
+            const notificationMsg = `Ang iyong application (#${id}) para sa ${applicant.program_type} ay ${status}.`;
 
+            // Save to Notifications table
             await pool.query(
                 'INSERT INTO notifications (user_id, message, status, created_at) VALUES ($1, $2, $3, NOW())', 
                 [applicant.user_id, notificationMsg, 'unread']
             );
             
-            // SMS FUNCTION REMOVED TO PREVENT RENDER ERRORS DURING DEMO
+            // --- GMAIL NOTIFICATION ---
+            const mailOptions = {
+                from: '"TUGON PH" <micx@gmail.com>',
+                to: applicant.email,
+                subject: `Application Status: ${status}`,
+                text: `Magandang araw, ${applicant.first_name}!\n\n${notificationMsg}\n\nMaraming salamat!\n- Tugon Team`
+            };
+
+            transporter.sendMail(mailOptions, (error, info) => {
+                if (error) console.log('Email Error:', error);
+                else console.log('Email sent: ' + info.response);
+            });
             
-            res.status(200).json({ message: "Updated and Notification saved!", data: applicant });
+            res.status(200).json({ message: "Updated and Notification sent!", data: applicant });
         } else {
             res.status(404).json({ error: "Not found" });
         }
