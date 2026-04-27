@@ -40,7 +40,7 @@ const transporter = nodemailer.createTransport({
     service: 'gmail',
     auth: {
         user: 'haysherry30@gmail.com', // Siguraduhin na ito ang tamang Gmail mo
-        pass: 'xdia bxph jyna lsf'  // Ang iyong 16-digit App Password
+        pass: 'ueym uihi aduq frzp'  // Ang iyong 16-digit App Password
     }
 });
 
