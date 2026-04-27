@@ -39,7 +39,7 @@ pool.connect((err, client, release) => {
 const transporter = nodemailer.createTransport({
     service: 'gmail',
     auth: {
-        user: 'micx@gmail.com', // Siguraduhin na ito ang tamang Gmail mo
+        user: 'haysherry30@gmail.com', // Siguraduhin na ito ang tamang Gmail mo
         pass: 'xdia bxph jyna lsf'  // Ang iyong 16-digit App Password
     }
 });
@@ -275,12 +275,13 @@ app.patch('/applications/:id', async (req, res) => {
             );
             
             // --- GMAIL NOTIFICATION ---
+         
             const mailOptions = {
-                from: '"TUGON PH" <micx@gmail.com>',
-                to: applicant.email,
-                subject: `Application Status: ${status}`,
-                text: `Magandang araw, ${applicant.first_name}!\n\n${notificationMsg}\n\nMaraming salamat!\n- Tugon Team`
-            };
+    from: '"TUGON PH" <haysherry30@gmail.com>', 
+    to: applicant.email,
+    subject: `Application Status: ${status}`,
+    text: `Good Day!, ${applicant.first_name}!\n\nYour Application for ${applicant.program_type} is ${status}.\n\nThank You!\n- Tugon Team`
+};
 
             transporter.sendMail(mailOptions, (error, info) => {
                 if (error) console.log('Email Error:', error);
