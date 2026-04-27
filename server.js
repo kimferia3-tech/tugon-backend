@@ -127,13 +127,52 @@ app.post('/signup', async (req, res) => {
 app.post('/login', async (req, res) => {
     const { email, password } = req.body;
     try {
-        const result = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
-        if (result.rows.length > 0) {
-            const isMatch = await bcrypt.compare(password, result.rows[0].password);
-            if (isMatch) res.status(200).json({ message: "Login successful", user: result.rows[0] });
-            else res.status(401).json({ error: "Invalid credentials!" });
-        } else res.status(401).json({ error: "Invalid credentials!" });
-    } catch (err) { res.status(500).json({ error: "Server Error" }); }
+        // 1. Check muna sa 'users' table
+        let result = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
+        let userFound = result.rows[0];
+        let isAdmin = false;
+
+        // 2. Kung wala sa users, check naman sa 'admins' table
+        if (!userFound) {
+            result = await pool.query('SELECT * FROM admins WHERE email = $1', [email]);
+            userFound = result.rows[0];
+            if (userFound) isAdmin = true;
+        }
+
+        if (userFound) {
+            // I-verify ang password
+            // Note: Dahil sa SQL INSERT natin plain text ang nilagay, 
+            // gumamit muna tayo ng conditional para sa plain text o hashed.
+            let isMatch = false;
+            if (isAdmin) {
+                // Kung admin at plain text pa ang test data natin:
+                isMatch = (password === userFound.password);
+            } else {
+                // Kung user, gumagamit ka ng bcrypt hashing sa signup:
+                isMatch = await bcrypt.compare(password, userFound.password);
+            }
+
+            if (isMatch) {
+                // I-normalize natin ang response data
+                res.status(200).json({ 
+                    message: "Login successful", 
+                    user: {
+                        id: userFound.id,
+                        fullname: userFound.full_name || userFound.fullname,
+                        role: userFound.role || 'user',
+                        email: userFound.email
+                    } 
+                });
+            } else {
+                res.status(401).json({ error: "Invalid credentials!" });
+            }
+        } else {
+            res.status(401).json({ error: "Invalid credentials!" });
+        }
+    } catch (err) { 
+        console.error("Login Error:", err);
+        res.status(500).json({ error: "Server Error" }); 
+    }
 });
 
 // --- 6. SUBMIT PROGRAM LOGIC ---
