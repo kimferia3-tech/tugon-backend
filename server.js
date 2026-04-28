@@ -242,7 +242,7 @@ app.get('/applications', async (req, res) => {
 
 app.get('/applications/approved', async (req, res) => {
     try {
-        const result = await pool.query("SELECT id, first_name, last_name, mobile_number, gcash, status FROM submitted_programs WHERE status = 'Approved' ORDER BY submitted_at DESC");
+        const result = await pool.query("SELECT id, first_name, last_name, mobile_number, email, gcash, program_type, status FROM submitted_programs WHERE status = 'Approved' ORDER BY submitted_at DESC");
         res.status(200).json(result.rows);
     } catch (err) { res.status(500).json({ error: "Error fetching approved list" }); }
 });
@@ -334,6 +334,35 @@ app.get('/api/programs', async (req, res) => {
         res.status(200).json(result.rows);
     } catch (err) {
         res.status(500).json({ error: "Error fetching programs" });
+    }
+});
+
+// --- 9. PAYOUT NOTIFICATION (NEW ADDITION) ---
+app.post('/notify-payout', async (req, res) => {
+    const { email, firstName, lastName } = req.body;
+
+    const mailOptions = {
+        from: '"TUGON PH" <haysherry30@gmail.com>',
+        to: email,
+        subject: 'PAYOUT CONFIRMED - TUGON System',
+        html: `
+            <div style="font-family: Arial, sans-serif; border: 1px solid #eee; padding: 20px; border-radius: 10px;">
+                <h2 style="color: #7a0000;">PAYOUT SUCCESSFUL!</h2>
+                <p>Hello <b>${firstName} ${lastName}</b>,</p>
+                <p>Good news! This is to confirm that your financial assistance from the TUGON portal has been successfully processed and sent to your <b>GCash number</b>.</p>
+                <p>Please check your GCash wallet to verify the receipt of your funds.</p>
+                <hr>
+                <p style="font-size: 0.8rem; color: #888;">This is an automated notification. No need to reply.</p>
+            </div>
+        `
+    };
+
+    try {
+        await transporter.sendMail(mailOptions);
+        res.status(200).json({ message: 'Payout email sent successfully!' });
+    } catch (error) {
+        console.error('Error sending payout email:', error);
+        res.status(500).json({ error: 'Failed to send payout email' });
     }
 });
 
