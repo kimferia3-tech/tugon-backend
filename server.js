@@ -15,9 +15,8 @@ const server = http.createServer(app);
 // --- 1. SOCKET.IO CONFIGURATION ---
 const io = new Server(server, {
     cors: { 
-        origin: ["[https://www.tugonph.com](https://www.tugonph.com)", "[https://tugonph.com](https://tugonph.com)"], 
-        methods: ["GET", "POST", "PATCH", "DELETE"],
-        credentials: true
+        origin: "*", 
+        methods: ["GET", "POST", "PATCH", "DELETE"]
     }
 });
 
@@ -55,11 +54,7 @@ const storage = multer.diskStorage({
 const upload = multer({ storage: storage });
 
 // --- 3. MIDDLEWARES ---
-app.use(cors({ 
-    origin: ["[https://www.tugonph.com](https://www.tugonph.com)", "[https://tugonph.com](https://tugonph.com)"],
-    methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
-    credentials: true 
-})); 
+app.use(cors()); 
 app.use(express.json());
 app.use(express.static(__dirname)); 
 app.use('/uploads', express.static('uploads'));
