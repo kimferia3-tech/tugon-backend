@@ -359,4 +359,88 @@ app.post('/notify-payout', async (req, res) => {
 });
 
 const PORT = process.env.PORT || 10000; 
+
+
+// --- 10. USER DASHBOARD STATS ROUTE ---
+app.get('/api/user/dashboard-stats', async (req, res) => {
+    const { userId } = req.query;
+
+    if (!userId) {
+        return res.status(400).json({ error: "User ID is required" });
+    }
+
+    try {
+        // 1. Bilang ng active/pending applications
+        const activeAppsQuery = `
+            SELECT COUNT(*) AS active_count 
+            FROM submitted_programs 
+            WHERE user_id = $1 AND status IN ('Pending', 'Under Review')
+        `;
+
+        // 2. Latest status ng pinakabagong application
+        const latestStatusQuery = `
+            SELECT status 
+            FROM submitted_programs 
+            WHERE user_id = $1 
+            ORDER BY submitted_at DESC 
+            LIMIT 1
+        `;
+
+        // 3. Bilang ng uploaded/verified documents sa latest application
+        const verifiedDocsQuery = `
+            SELECT 
+                (CASE WHEN doc_coe IS NOT NULL THEN 1 ELSE 0 END +
+                 CASE WHEN doc_psa IS NOT NULL THEN 1 ELSE 0 END +
+                 CASE WHEN doc_school_id IS NOT NULL THEN 1 ELSE 0 END +
+                 CASE WHEN doc_billing IS NOT NULL THEN 1 ELSE 0 END +
+                 CASE WHEN doc_med_cert IS NOT NULL THEN 1 ELSE 0 END +
+                 CASE WHEN doc_social_case IS NOT NULL THEN 1 ELSE 0 END +
+                 CASE WHEN doc_patient_id IS NOT NULL THEN 1 ELSE 0 END +
+                 CASE WHEN doc_rep_id IS NOT NULL THEN 1 ELSE 0 END +
+                 CASE WHEN doc_gov_id IS NOT NULL THEN 1 ELSE 0 END +
+                 CASE WHEN doc_indigency IS NOT NULL THEN 1 ELSE 0 END +
+                 CASE WHEN doc_form IS NOT NULL THEN 1 ELSE 0 END +
+                 CASE WHEN photo_2x2 IS NOT NULL THEN 1 ELSE 0 END +
+                 CASE WHEN doc_patient_photo IS NOT NULL THEN 1 ELSE 0 END) AS doc_count
+            FROM submitted_programs
+            WHERE user_id = $1
+            ORDER BY submitted_at DESC
+            LIMIT 1
+        `;
+
+        // 4. Bilang ng approved grants
+        const totalGrantsQuery = `
+            SELECT COUNT(*) AS grants_count 
+            FROM submitted_programs 
+            WHERE user_id = $1 AND status IN ('Approved', 'Payout Completed')
+        `;
+
+        // Execute lahat nang sabay (Parallel Querying)
+        const [activeRes, statusRes, docsRes, grantsRes] = await Promise.all([
+            pool.query(activeAppsQuery, [userId]),
+            pool.query(latestStatusQuery, [userId]),
+            pool.query(verifiedDocsQuery, [userId]),
+            pool.query(totalGrantsQuery, [userId])
+        ]);
+
+        const activeApps = parseInt(activeRes.rows[0]?.active_count || 0);
+        const verifiedDocs = parseInt(docsRes.rows[0]?.doc_count || 0);
+        const totalGrants = parseInt(grantsRes.rows[0]?.grants_count || 0);
+        const overallStatus = statusRes.rows[0]?.status || 'No Application';
+
+        res.status(200).json({
+            success: true,
+            stats: {
+                activeApplications: activeApps,
+                verifiedDocuments: verifiedDocs,
+                totalGrants: totalGrants,
+                overallStatus: overallStatus
+            }
+        });
+
+    } catch (err) {
+        console.error("Error fetching user stats:", err.message);
+        res.status(500).json({ error: "Failed to fetch dashboard stats" });
+    }
+});
 server.listen(PORT, () => { console.log(`Server running on port ${PORT}`); });
