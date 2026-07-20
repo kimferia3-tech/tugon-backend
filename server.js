@@ -39,8 +39,8 @@ pool.connect((err, client, release) => {
 const transporter = nodemailer.createTransport({
     service: 'gmail',
     auth: {
-        user: 'haysherry30@gmail.com',
-        pass: 'ueym uihi aduq frzp'
+        user: process.env.EMAIL_USER || 'haysherry30@gmail.com',
+        pass: process.env.EMAIL_PASS || 'ueym uihi aduq frzp' // Recommended na ilagay sa env variable
     }
 });
 
@@ -228,7 +228,6 @@ app.post('/submit-program', upload.fields([
 });
 
 // --- 7. ADMIN ROUTES ---
-
 app.get('/applications', async (req, res) => {
     try {
         const result = await pool.query("SELECT *, TO_CHAR(submitted_at, 'Mon DD, YYYY') as date FROM submitted_programs ORDER BY submitted_at DESC");
@@ -304,7 +303,6 @@ app.get('/api/notifications/:userId', async (req, res) => {
 });
 
 // --- 8. PROGRAM DISPATCHER LOGIC ---
-
 app.post('/api/programs', async (req, res) => {
     const { title, slots, launchDate } = req.body;
     try {
@@ -358,9 +356,6 @@ app.post('/notify-payout', async (req, res) => {
     }
 });
 
-const PORT = process.env.PORT || 10000; 
-
-
 // --- 10. USER DASHBOARD STATS ROUTE ---
 app.get('/api/user/dashboard-stats', async (req, res) => {
     const { userId } = req.query;
@@ -370,14 +365,12 @@ app.get('/api/user/dashboard-stats', async (req, res) => {
     }
 
     try {
-        // 1. Bilang ng active/pending applications
         const activeAppsQuery = `
             SELECT COUNT(*) AS active_count 
             FROM submitted_programs 
             WHERE user_id = $1 AND status IN ('Pending', 'Under Review')
         `;
 
-        // 2. Latest status ng pinakabagong application
         const latestStatusQuery = `
             SELECT status 
             FROM submitted_programs 
@@ -386,7 +379,6 @@ app.get('/api/user/dashboard-stats', async (req, res) => {
             LIMIT 1
         `;
 
-        // 3. Bilang ng uploaded/verified documents sa latest application
         const verifiedDocsQuery = `
             SELECT 
                 (CASE WHEN doc_coe IS NOT NULL THEN 1 ELSE 0 END +
@@ -408,14 +400,12 @@ app.get('/api/user/dashboard-stats', async (req, res) => {
             LIMIT 1
         `;
 
-        // 4. Bilang ng approved grants
         const totalGrantsQuery = `
             SELECT COUNT(*) AS grants_count 
             FROM submitted_programs 
             WHERE user_id = $1 AND status IN ('Approved', 'Payout Completed')
         `;
 
-        // Execute lahat nang sabay (Parallel Querying)
         const [activeRes, statusRes, docsRes, grantsRes] = await Promise.all([
             pool.query(activeAppsQuery, [userId]),
             pool.query(latestStatusQuery, [userId]),
@@ -443,4 +433,9 @@ app.get('/api/user/dashboard-stats', async (req, res) => {
         res.status(500).json({ error: "Failed to fetch dashboard stats" });
     }
 });
-server.listen(PORT, () => { console.log(`Server running on port ${PORT}`); });
+
+// --- SERVER START ---
+const PORT = process.env.PORT || 10000;
+server.listen(PORT, () => { 
+    console.log(`Server running on port ${PORT}`); 
+});
