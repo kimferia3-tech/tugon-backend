@@ -1,47 +1,3 @@
-const pool = new Pool({
-    connectionString: 'postgresql://tugondb_user:dlVoDAJvrcccEseW7BujbPdhJtqq96Lz@dpg-d7fq3hf7f7vs73a7s5a0-a/tugondb',  
-    ssl: { rejectUnauthorized: false },
-    max: 10,
-    idleTimeoutMillis: 30000,
-    connectionTimeoutMillis: 10000,
-});
-
-pool.connect((err, client, release) => {
-    if (err) return console.error('Error connecting to database:', err.stack);
-    console.log('Successfully connected to Render PostgreSQL!');
-    release();
-});
-
-```
-
----
-
-### 2. Palitan mo ng ganito:
-
-```javascript
-const pool = new Pool({
-    connectionString: process.env.DATABASE_URL,  
-    ssl: { rejectUnauthorized: false },
-    max: 10,
-    idleTimeoutMillis: 30000,
-    connectionTimeoutMillis: 10000,
-});
-
-pool.connect((err, client, release) => {
-    if (err) return console.error('Error connecting to database:', err.stack);
-    console.log('Successfully connected to Neon PostgreSQL!');
-    release();
-});
-
-```
-
----
-
-### Ang buong naayos na `server.js` code mo:
-
-Ito na ang buong updated code mo. Pwede mo itong kopyahin at i-paste sa GitHub:
-
-```javascript
 const express = require('express');
 const { Pool } = require('pg');
 const path = require('path');
@@ -51,7 +7,7 @@ const { Server } = require('socket.io');
 const multer = require('multer');
 const bcrypt = require('bcryptjs');
 const axios = require('axios');
-const nodemailer = require('nodemailer'); // Added Nodemailer
+const nodemailer = require('nodemailer');
 
 const app = express();
 const server = http.createServer(app); 
@@ -59,7 +15,7 @@ const server = http.createServer(app);
 // --- 1. SOCKET.IO CONFIGURATION ---
 const io = new Server(server, {
     cors: { 
-        origin: ["https://www.tugonph.com", "https://tugonph.com"], 
+        origin: ["[https://www.tugonph.com](https://www.tugonph.com)", "[https://tugonph.com](https://tugonph.com)"], 
         methods: ["GET", "POST", "PATCH", "DELETE"],
         credentials: true
     }
@@ -84,8 +40,8 @@ pool.connect((err, client, release) => {
 const transporter = nodemailer.createTransport({
     service: 'gmail',
     auth: {
-        user: 'haysherry30@gmail.com', // Siguraduhin na ito ang tamang Gmail mo
-        pass: 'ueym uihi aduq frzp'  // Ang iyong 16-digit App Password
+        user: 'haysherry30@gmail.com',
+        pass: 'ueym uihi aduq frzp'
     }
 });
 
@@ -100,7 +56,7 @@ const upload = multer({ storage: storage });
 
 // --- 3. MIDDLEWARES ---
 app.use(cors({ 
-    origin: ["https://www.tugonph.com", "https://tugonph.com"],
+    origin: ["[https://www.tugonph.com](https://www.tugonph.com)", "[https://tugonph.com](https://tugonph.com)"],
     methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
     credentials: true 
 })); 
@@ -409,4 +365,3 @@ app.post('/notify-payout', async (req, res) => {
 
 const PORT = process.env.PORT || 10000; 
 server.listen(PORT, () => { console.log(`Server running on port ${PORT}`); });
-
