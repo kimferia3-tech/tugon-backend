@@ -1,3 +1,47 @@
+const pool = new Pool({
+    connectionString: 'postgresql://tugondb_user:dlVoDAJvrcccEseW7BujbPdhJtqq96Lz@dpg-d7fq3hf7f7vs73a7s5a0-a/tugondb',  
+    ssl: { rejectUnauthorized: false },
+    max: 10,
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 10000,
+});
+
+pool.connect((err, client, release) => {
+    if (err) return console.error('Error connecting to database:', err.stack);
+    console.log('Successfully connected to Render PostgreSQL!');
+    release();
+});
+
+```
+
+---
+
+### 2. Palitan mo ng ganito:
+
+```javascript
+const pool = new Pool({
+    connectionString: process.env.DATABASE_URL,  
+    ssl: { rejectUnauthorized: false },
+    max: 10,
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 10000,
+});
+
+pool.connect((err, client, release) => {
+    if (err) return console.error('Error connecting to database:', err.stack);
+    console.log('Successfully connected to Neon PostgreSQL!');
+    release();
+});
+
+```
+
+---
+
+### Ang buong naayos na `server.js` code mo:
+
+Ito na ang buong updated code mo. Pwede mo itong kopyahin at i-paste sa GitHub:
+
+```javascript
 const express = require('express');
 const { Pool } = require('pg');
 const path = require('path');
@@ -21,8 +65,9 @@ const io = new Server(server, {
     }
 });
 
+// --- DATABASE CONFIGURATION (NEON VERSION) ---
 const pool = new Pool({
-    connectionString: 'postgresql://tugondb_user:dlVoDAJvrcccEseW7BujbPdhJtqq96Lz@dpg-d7fq3hf7f7vs73a7s5a0-a/tugondb',  
+    connectionString: process.env.DATABASE_URL,  
     ssl: { rejectUnauthorized: false },
     max: 10,
     idleTimeoutMillis: 30000,
@@ -31,7 +76,7 @@ const pool = new Pool({
 
 pool.connect((err, client, release) => {
     if (err) return console.error('Error connecting to database:', err.stack);
-    console.log('Successfully connected to Render PostgreSQL!');
+    console.log('Successfully connected to Neon PostgreSQL!');
     release();
 });
 
@@ -258,7 +303,6 @@ app.patch('/applications/:id', async (req, res) => {
     const { id } = req.params;
     const { status } = req.body;
     try {
-        // Updated query to also return EMAIL
         const result = await pool.query(
             'UPDATE submitted_programs SET status = $1 WHERE id = $2 RETURNING user_id, program_type, first_name, email', 
             [status, id]
@@ -268,20 +312,17 @@ app.patch('/applications/:id', async (req, res) => {
             const applicant = result.rows[0];
             const notificationMsg = `Ang iyong application (#${id}) para sa ${applicant.program_type} ay ${status}.`;
 
-            // Save to Notifications table
             await pool.query(
                 'INSERT INTO notifications (user_id, message, status, created_at) VALUES ($1, $2, $3, NOW())', 
                 [applicant.user_id, notificationMsg, 'unread']
             );
             
-            // --- GMAIL NOTIFICATION ---
-         
             const mailOptions = {
-    from: '"TUGON PH" <haysherry30@gmail.com>', 
-    to: applicant.email,
-    subject: `Application Status: ${status}`,
-    text: `Good Day!, ${applicant.first_name}!\n\nYour Application for ${applicant.program_type} is ${status}.\n\nThank You!\n- Tugon Team`
-};
+                from: '"TUGON PH" <haysherry30@gmail.com>', 
+                to: applicant.email,
+                subject: `Application Status: ${status}`,
+                text: `Good Day!, ${applicant.first_name}!\n\nYour Application for ${applicant.program_type} is ${status}.\n\nThank You!\n- Tugon Team`
+            };
 
             transporter.sendMail(mailOptions, (error, info) => {
                 if (error) console.log('Email Error:', error);
@@ -337,7 +378,7 @@ app.get('/api/programs', async (req, res) => {
     }
 });
 
-// --- 9. PAYOUT NOTIFICATION (NEW ADDITION) ---
+// --- 9. PAYOUT NOTIFICATION ---
 app.post('/notify-payout', async (req, res) => {
     const { email, firstName, lastName } = req.body;
 
@@ -368,3 +409,4 @@ app.post('/notify-payout', async (req, res) => {
 
 const PORT = process.env.PORT || 10000; 
 server.listen(PORT, () => { console.log(`Server running on port ${PORT}`); });
+
