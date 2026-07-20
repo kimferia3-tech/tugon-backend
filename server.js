@@ -219,7 +219,13 @@ app.post('/submit-program', upload.fields([
         ];
 
         const result = await pool.query(queryText, values);
+        
+        // Notify admin panel & trigger student progress refresh
         io.emit('newApplication'); 
+        if (data.user_id) {
+            io.emit('application_status_updated', { userId: data.user_id, status: 'Pending' });
+        }
+
         res.status(200).json({ message: "Success", application: result.rows[0] });
     } catch (err) {
         console.error("DETALYE NG ERROR:", err.message);
@@ -237,14 +243,14 @@ app.get('/applications', async (req, res) => {
 
 app.get('/applications/approved', async (req, res) => {
     try {
-        const result = await pool.query("SELECT id, first_name, last_name, mobile_number, email, gcash, program_type, status FROM submitted_programs WHERE status = 'Approved' ORDER BY submitted_at DESC");
+        const result = await pool.query("SELECT id, user_id, first_name, last_name, mobile_number, email, gcash, program_type, status FROM submitted_programs WHERE status = 'Approved' ORDER BY submitted_at DESC");
         res.status(200).json(result.rows);
     } catch (err) { res.status(500).json({ error: "Error fetching approved list" }); }
 });
 
 app.get('/applications/rejected', async (req, res) => {
     try {
-        const result = await pool.query("SELECT id, first_name, last_name, program_type, status FROM submitted_programs WHERE status = 'Rejected' ORDER BY submitted_at DESC");
+        const result = await pool.query("SELECT id, user_id, first_name, last_name, program_type, status FROM submitted_programs WHERE status = 'Rejected' ORDER BY submitted_at DESC");
         res.status(200).json(result.rows);
     } catch (err) { res.status(500).json({ error: "Error fetching rejected list" }); }
 });
@@ -267,6 +273,12 @@ app.patch('/applications/:id', async (req, res) => {
                 [applicant.user_id, notificationMsg, 'unread']
             );
             
+            // Real-time socket emit para sa student tracker
+            io.emit('application_status_updated', { 
+                userId: applicant.user_id, 
+                status: status 
+            });
+
             const mailOptions = {
                 from: '"TUGON PH" <haysherry30@gmail.com>', 
                 to: applicant.email,
@@ -329,30 +341,47 @@ app.get('/api/programs', async (req, res) => {
 
 // --- 9. PAYOUT NOTIFICATION ---
 app.post('/notify-payout', async (req, res) => {
-    const { email, firstName, lastName } = req.body;
-
-    const mailOptions = {
-        from: '"TUGON PH" <haysherry30@gmail.com>',
-        to: email,
-        subject: 'PAYOUT CONFIRMED - TUGON System',
-        html: `
-            <div style="font-family: Arial, sans-serif; border: 1px solid #eee; padding: 20px; border-radius: 10px;">
-                <h2 style="color: #7a0000;">PAYOUT SUCCESSFUL!</h2>
-                <p>Hello <b>${firstName} ${lastName}</b>,</p>
-                <p>Good news! This is to confirm that your financial assistance from the TUGON portal has been successfully processed and sent to your <b>GCash number</b>.</p>
-                <p>Please check your GCash wallet to verify the receipt of your funds.</p>
-                <hr>
-                <p style="font-size: 0.8rem; color: #888;">This is an automated notification. No need to reply.</p>
-            </div>
-        `
-    };
+    const { email, firstName, lastName, applicationId, userId } = req.body;
 
     try {
+        // 1. Update Application Status sa DB kung may ibinigay na applicationId
+        if (applicationId) {
+            await pool.query(
+                "UPDATE submitted_programs SET status = 'Payout Completed' WHERE id = $1",
+                [applicationId]
+            );
+        }
+
+        // 2. Real-time Socket Trigger para mag-update ang timeline ng student
+        if (userId) {
+            io.emit('application_status_updated', { 
+                userId: userId, 
+                status: 'Payout Completed' 
+            });
+        }
+
+        // 3. Email Notification
+        const mailOptions = {
+            from: '"TUGON PH" <haysherry30@gmail.com>',
+            to: email,
+            subject: 'PAYOUT CONFIRMED - TUGON System',
+            html: `
+                <div style="font-family: Arial, sans-serif; border: 1px solid #eee; padding: 20px; border-radius: 10px;">
+                    <h2 style="color: #7a0000;">PAYOUT SUCCESSFUL!</h2>
+                    <p>Hello <b>${firstName} ${lastName}</b>,</p>
+                    <p>Good news! This is to confirm that your financial assistance from the TUGON portal has been successfully processed and sent to your <b>GCash number</b>.</p>
+                    <p>Please check your GCash wallet to verify the receipt of your funds.</p>
+                    <hr>
+                    <p style="font-size: 0.8rem; color: #888;">This is an automated notification. No need to reply.</p>
+                </div>
+            `
+        };
+
         await transporter.sendMail(mailOptions);
-        res.status(200).json({ message: 'Payout email sent successfully!' });
+        res.status(200).json({ message: 'Payout email sent and status updated successfully!' });
     } catch (error) {
         console.error('Error sending payout email:', error);
-        res.status(500).json({ error: 'Failed to send payout email' });
+        res.status(500).json({ error: 'Failed to process payout notification' });
     }
 });
 
