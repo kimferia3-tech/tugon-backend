@@ -463,6 +463,14 @@ app.get('/api/user/dashboard-stats', async (req, res) => {
     }
 });
 
+
+
+// Function para mag-save ng activity
+async function logActivity(userId, activity) {
+    const query = 'INSERT INTO activity_logs (user_id, activity) VALUES ($1, $2)';
+    await pool.query(query, [userId, activity]);
+}
+
 // --- SERVER START ---
 const PORT = process.env.PORT || 10000;
 server.listen(PORT, () => { 
