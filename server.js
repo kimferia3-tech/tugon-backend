@@ -157,7 +157,8 @@ app.post('/login', async (req, res) => {
                     user: {
                         id: userFound.id,
                         fullname: userFound.full_name || userFound.fullname,
-                        role: userFound.role || 'user',
+                    role: isAdmin ? 'admin' : (userFound.role ? userFound.role.toLowerCase() : 'user'),
+
                         email: userFound.email
                     } 
                 });
