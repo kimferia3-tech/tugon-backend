@@ -242,6 +242,27 @@ app.get('/applications', async (req, res) => {
     } catch (err) { res.status(500).json({ error: "Error" }); }
 });
 
+// --- GET RECENT SUBMISSIONS FOR DASHBOARD TABLE ---
+app.get('/api/recent-submissions', async (req, res) => {
+    try {
+        const result = await pool.query(`
+            SELECT 
+                id, 
+                CONCAT(first_name, ' ', last_name) AS applicant, 
+                municipality, 
+                program_type AS program, 
+                status 
+            FROM submitted_programs 
+            ORDER BY id DESC 
+            LIMIT 5
+        `);
+        res.status(200).json(result.rows);
+    } catch (err) {
+        console.error("Error fetching recent submissions:", err.message);
+        res.status(500).json({ error: "Failed to fetch recent submissions" });
+    }
+});
+
 app.get('/applications/approved', async (req, res) => {
     try {
         const result = await pool.query("SELECT id, user_id, first_name, last_name, mobile_number, email, gcash, program_type, status FROM submitted_programs WHERE status = 'Approved' ORDER BY submitted_at DESC");
