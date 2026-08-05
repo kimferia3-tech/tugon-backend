@@ -503,6 +503,39 @@ async function logActivity(userId, activity) {
     await pool.query(query, [userId, activity]);
 }
 
+
+app.put('/applications/:id/status', async (req, res) => {
+
+    try {
+
+        const { id } = req.params;
+        const { status } = req.body;
+
+        await pool.query(
+            `
+            UPDATE submitted_programs
+            SET status = $1
+            WHERE id = $2
+            `,
+            [status, id]
+        );
+
+        res.json({
+            success: true
+        });
+
+    }
+
+    catch(err){
+
+        console.error(err);
+
+        res.status(500).json(err);
+
+    }
+
+});
+
 // --- SERVER START ---
 const PORT = process.env.PORT || 10000;
 server.listen(PORT, () => { 
