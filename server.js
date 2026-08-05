@@ -174,6 +174,17 @@ app.post('/login', async (req, res) => {
     }
 });
 
+app.get('/applications/pending', async (req, res) => {
+    try {
+        const result = await pool.query(
+            "SELECT *, TO_CHAR(submitted_at, 'Mon DD, YYYY') as date FROM submitted_programs WHERE status = 'Pending' ORDER BY submitted_at DESC"
+        );
+        res.status(200).json(result.rows);
+    } catch (err) {
+        res.status(500).json({ error: "Error fetching pending applications" });
+    }
+});
+
 // --- 6. SUBMIT PROGRAM LOGIC ---
 app.post('/submit-program', upload.fields([
     { name: 'id_photo_2x2', maxCount: 1 }, 
@@ -484,7 +495,6 @@ app.get('/api/user/dashboard-stats', async (req, res) => {
         res.status(500).json({ error: "Failed to fetch dashboard stats" });
     }
 });
-
 
 
 // Function para mag-save ng activity
