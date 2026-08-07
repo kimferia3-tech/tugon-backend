@@ -187,7 +187,8 @@ app.get('/applications/pending', async (req, res) => {
 
 // --- 6. SUBMIT PROGRAM LOGIC ---
 app.post('/submit-program', upload.fields([
-    { name: 'id_photo_2x2', maxCount: 1 }, 
+    { name: 'photo_2x2', maxCount: 1 },        // FIX 1: Dinagdagan ng photo_2x2
+    { name: 'id_photo_2x2', maxCount: 1 },     // Fallback
     { name: 'doc_coe', maxCount: 1 },
     { name: 'doc_psa', maxCount: 1 }, 
     { name: 'doc_school_id', maxCount: 1 },
@@ -226,7 +227,8 @@ app.post('/submit-program', upload.fields([
             data.father_name || 'N/A', data.mother_name || 'N/A', data.father_occ || 'N/A', data.mother_occ || 'N/A',
             getFileName('doc_coe'), getFileName('doc_psa'), getFileName('doc_school_id'), getFileName('doc_billing'), getFileName('doc_med_cert'),
             getFileName('doc_case_study'), getFileName('doc_patient_id'), getFileName('doc_rep_id'), getFileName('doc_gov_id'), getFileName('doc_indigency'), getFileName('doc_form'),
-            getFileName('id_photo_2x2'), getFileName('doc_patient_photo'), 
+            getFileName('photo_2x2') || getFileName('id_photo_2x2'), // FIX 2: Kunin ang photo_2x2 file name
+            getFileName('doc_patient_photo'), 
             'Pending'
         ];
 
