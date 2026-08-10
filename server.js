@@ -177,14 +177,16 @@ app.post('/login', async (req, res) => {
 // --- 6. NEW TABLES INTEGRATION (new_applications) ---
 // =======================================================
 
-// GET ALL APPLICATIONS (from new_applications)
 app.get('/applications', async (req, res) => {
     try {
-        const result = await pool.query("SELECT *, TO_CHAR(submitted_at, 'Mon DD, YYYY') as date FROM new_applications ORDER BY id DESC");
+        const result = await pool.query(
+            "SELECT *, TO_CHAR(submitted_at, 'Mon DD, YYYY') AS date FROM submitted_programs ORDER BY id DESC"
+        );
+
         res.status(200).json(result.rows);
-    } catch (err) { 
-        console.error("Error fetching new_applications:", err.message);
-        res.status(500).json({ error: "Error fetching applications" }); 
+    } catch (err) {
+        console.error("Error fetching submitted_programs:", err.message);
+        res.status(500).json({ error: "Error fetching applications" });
     }
 });
 
