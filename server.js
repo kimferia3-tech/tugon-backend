@@ -209,7 +209,31 @@ app.post('/applications', async (req, res) => {
         res.status(500).json({ error: err.message });
     }
 });
+app.get('/debug/database', async (req, res) => {
+    try {
+        const db = await pool.query(`
+            SELECT
+                current_database() AS database_name,
+                current_user AS database_user
+        `);
 
+        const count = await pool.query(`
+            SELECT COUNT(*) AS total
+            FROM submitted_programs
+        `);
+
+        res.json({
+            database: db.rows[0],
+            submitted_programs_total: count.rows[0].total
+        });
+
+    } catch (err) {
+        console.error("DATABASE DEBUG ERROR:", err.message);
+        res.status(500).json({
+            error: err.message
+        });
+    }
+});
 // =======================================================
 // --- 7. NEW SETTINGS & ADMIN PROFILE (new_settings) ---
 // =======================================================
