@@ -63,121 +63,276 @@ app.use(express.json());
 app.use(express.static(__dirname));
 app.use('/uploads', express.static('uploads'));
 
+// =======================================================
 // --- 4. SOCKET.IO CHAT LOGIC ---
-let activeUsers = new Set();
+// =======================================================
+
+const activeUsers = new Map();
 
 io.on('connection', (socket) => {
 
-    socket.on('join_chat', async (data) => {
+    console.log('Socket connected:', socket.id);
 
-        if (data.room) {
+    // ---------------------------------------------------
+    // USER / ADMIN JOINS CHAT ROOM
+    // ---------------------------------------------------
+    socket.on('join_chat', async (data = {}) => {
 
-            socket.join(data.room);
+        try {
 
-            if (data.room !== 'Admin' && data.room !== 'General') {
+            const room = String(data.room || '').trim();
 
-                activeUsers.add(data.room);
+            if (!room) return;
 
-                io.emit(
-                    'update_user_list',
-                    Array.from(activeUsers)
-                );
+            socket.join(room);
+
+            socket.data.chatRoom = room;
+
+            // Track active users except shared rooms
+            if (room !== 'Admin' && room !== 'General') {
+
+                activeUsers.set(room, {
+                    socketId: socket.id,
+                    online: true
+                });
 
             }
+
+            io.emit(
+                'update_user_list',
+                Array.from(activeUsers.keys())
+            );
+
+            // Tell the current socket that it is online
+            socket.emit('chat_connected', {
+                room
+            });
+
+        } catch (err) {
+
+            console.error(
+                'join_chat error:',
+                err.message
+            );
+
         }
+
     });
 
+
+    // ---------------------------------------------------
+    // REQUEST ACTIVE USER LIST
+    // ---------------------------------------------------
     socket.on('request_user_list', () => {
 
         socket.emit(
             'update_user_list',
-            Array.from(activeUsers)
+            Array.from(activeUsers.keys())
         );
 
     });
 
-    socket.on('get_chat_history', async (data) => {
+
+    // ---------------------------------------------------
+    // GET CHAT HISTORY
+    // ---------------------------------------------------
+    socket.on('get_chat_history', async (data = {}) => {
 
         try {
+
+            const room = String(data.room || '').trim();
+
+            if (!room) {
+
+                return socket.emit(
+                    'chat_history',
+                    []
+                );
+
+            }
 
             const result = await pool.query(
                 `
                 SELECT
+                    id,
                     sender,
                     message AS text,
-                    TO_CHAR(created_at, 'HH12:MI AM') AS time
+                    room,
+                    TO_CHAR(
+                        created_at,
+                        'HH12:MI AM'
+                    ) AS time,
+                    created_at
                 FROM chat_messages
                 WHERE room = $1
                 ORDER BY created_at ASC
                 `,
-                [data.room]
+                [room]
             );
 
-            socket.emit('chat_history', result.rows);
+            socket.emit(
+                'chat_history',
+                result.rows
+            );
 
         } catch (err) {
 
             console.error(
-                "Error fetching history:",
-                err
+                'Error fetching chat history:',
+                err.message
+            );
+
+            socket.emit(
+                'chat_history',
+                []
             );
 
         }
 
     });
 
-    socket.on('send_message', async (data) => {
+
+    // ---------------------------------------------------
+    // SEND MESSAGE
+    // ---------------------------------------------------
+    socket.on('send_message', async (data = {}) => {
 
         try {
 
-            await pool.query(
+            const text =
+                String(data.text || '').trim();
+
+            const sender =
+                String(data.sender || '').trim();
+
+            const room =
+                String(data.room || '').trim();
+
+            if (!text || !sender || !room) {
+                return;
+            }
+
+            const result = await pool.query(
                 `
                 INSERT INTO chat_messages
-                (sender, message, room, created_at)
-                VALUES ($1, $2, $3, NOW())
+                (
+                    sender,
+                    message,
+                    room,
+                    created_at
+                )
+                VALUES
+                (
+                    $1,
+                    $2,
+                    $3,
+                    NOW()
+                )
+                RETURNING
+                    id,
+                    sender,
+                    message AS text,
+                    room,
+                    TO_CHAR(
+                        created_at,
+                        'HH12:MI AM'
+                    ) AS time,
+                    created_at
                 `,
                 [
-                    data.sender,
-                    data.text,
-                    data.room
+                    sender,
+                    text,
+                    room
                 ]
             );
 
-            const realTime =
-                new Date().toLocaleTimeString(
-                    'en-US',
+            const message =
+                result.rows[0];
+
+            // -------------------------------------------
+            // REALTIME MESSAGE
+            // -------------------------------------------
+            io.to(room).emit(
+                'receive_message',
+                message
+            );
+
+
+            // -------------------------------------------
+            // CENTRALIZED CHAT NOTIFICATION
+            // -------------------------------------------
+            io.to(room).emit(
+                'chat_notification',
+                {
+                    room,
+                    sender,
+                    text,
+                    time: message.time
+                }
+            );
+
+
+            // -------------------------------------------
+            // ADMIN NOTIFICATION
+            // User sends message -> notify Admin
+            // -------------------------------------------
+            if (sender === 'User') {
+
+                io.to('Admin').emit(
+                    'new_chat_notification',
                     {
-                        hour: '2-digit',
-                        minute: '2-digit',
-                        hour12: true
+                        room,
+                        sender,
+                        text,
+                        time: message.time
                     }
                 );
 
-            io.to(data.room).emit(
-                'receive_message',
-                {
-                    text: data.text,
-                    sender: data.sender,
-                    time: realTime,
-                    room: data.room
-                }
-            );
+            }
+
+
+            // -------------------------------------------
+            // USER NOTIFICATION
+            // Admin replies -> notify User room
+            // -------------------------------------------
+            if (sender === 'Admin') {
+
+                io.to(room).emit(
+                    'new_chat_notification',
+                    {
+                        room,
+                        sender,
+                        text,
+                        time: message.time
+                    }
+                );
+
+            }
 
         } catch (err) {
 
             console.error(
-                "Error saving/sending msg:",
-                err
+                'Error saving/sending message:',
+                err.message
             );
 
         }
 
     });
 
-    socket.on('typing', (data) => {
+
+    // ---------------------------------------------------
+    // TYPING INDICATOR
+    // ---------------------------------------------------
+    socket.on('typing', (data = {}) => {
+
+        const room =
+            String(data.room || '').trim();
+
+        if (!room) return;
 
         socket
-            .to(data.room)
+            .to(room)
             .emit(
                 'display_typing',
                 data
@@ -185,10 +340,40 @@ io.on('connection', (socket) => {
 
     });
 
-    socket.on('disconnect', () => {});
+
+    // ---------------------------------------------------
+    // DISCONNECT
+    // ---------------------------------------------------
+    socket.on('disconnect', () => {
+
+        for (
+            const [room, info]
+            of activeUsers.entries()
+        ) {
+
+            if (info.socketId === socket.id) {
+
+                activeUsers.delete(room);
+
+                break;
+
+            }
+
+        }
+
+        io.emit(
+            'update_user_list',
+            Array.from(activeUsers.keys())
+        );
+
+        console.log(
+            'Socket disconnected:',
+            socket.id
+        );
+
+    });
 
 });
-
 // --- 5. AUTHENTICATION ROUTES ---
 
 app.post('/signup', async (req, res) => {
