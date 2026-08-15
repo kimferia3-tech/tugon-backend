@@ -1459,6 +1459,41 @@ app.get('/api/recent-submissions', async (req, res) => {
 
 });
 
+// RECENT SUBMISSIONS
+app.get('/api/recent-submissions', async (req, res) => {
+    try {
+        const result = await pool.query(
+            `
+            SELECT 
+                id,
+                CONCAT(first_name, ' ', last_name) AS full_name,
+                program_type,
+                status,
+                TO_CHAR(submitted_at, 'Mon DD, YYYY HH:MI AM') AS date
+            FROM submitted_programs
+            ORDER BY id DESC
+            LIMIT 10
+            `
+        );
+
+        res.status(200).json(result.rows);
+
+    } catch (err) {
+        console.error("Error fetching recent submissions:", err.message);
+        res.status(500).json({
+            error: "Failed to fetch recent submissions"
+        });
+    }
+});
+
+// =======================================================
+// --- 9. SERVER START ---
+// =======================================================
+const PORT = process.env.PORT || 5000;
+
+server.listen(PORT, () => {
+    console.log(`Server is running on port ${PORT}`);
+});
 
 // --- SERVER START ---
 
