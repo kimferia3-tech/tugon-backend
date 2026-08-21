@@ -584,6 +584,91 @@ app.get('/applications', async (req, res) => {
 });
 
 
+
+
+// =======================================================
+// API ALIASES (used by user dashboard / live-chat)
+// =======================================================
+
+app.get('/api/applications', async (req, res) => {
+    try {
+        const email = String(req.query.email || '').trim().toLowerCase();
+        let result;
+        if (email) {
+            result = await pool.query(
+                `
+                SELECT *,
+                TO_CHAR(submitted_at, 'Mon DD, YYYY') AS date
+                FROM submitted_programs
+                WHERE LOWER(TRIM(email)) = $1
+                ORDER BY id DESC
+                `,
+                [email]
+            );
+        } else {
+            result = await pool.query(
+                `
+                SELECT *,
+                TO_CHAR(submitted_at, 'Mon DD, YYYY') AS date
+                FROM submitted_programs
+                ORDER BY id DESC
+                `
+            );
+        }
+        res.status(200).json(result.rows);
+    } catch (err) {
+        console.error('GET /api/applications error:', err.message);
+        res.status(500).json({ error: 'Error fetching applications' });
+    }
+});
+
+app.get('/api/applications/user/:userId', async (req, res) => {
+    try {
+        const userId = req.params.userId;
+        const result = await pool.query(
+            `
+            SELECT *,
+            TO_CHAR(submitted_at, 'Mon DD, YYYY') AS date
+            FROM submitted_programs
+            WHERE user_id::text = $1
+            ORDER BY id DESC
+            `,
+            [String(userId)]
+        );
+        res.status(200).json(result.rows);
+    } catch (err) {
+        console.error('GET /api/applications/user error:', err.message);
+        res.status(500).json({ error: 'Error fetching user applications' });
+    }
+});
+
+// Lightweight notifications feed (status-based; extend later if needed)
+app.get('/api/notifications/:userId', async (req, res) => {
+    try {
+        const userId = req.params.userId;
+        const result = await pool.query(
+            `
+            SELECT
+                id,
+                status,
+                program_type,
+                submitted_at AS created_at,
+                CONCAT('Application status: ', status) AS message,
+                CONCAT('Application ', status) AS title
+            FROM submitted_programs
+            WHERE user_id::text = $1
+            ORDER BY id DESC
+            LIMIT 20
+            `,
+            [String(userId)]
+        );
+        res.status(200).json(result.rows);
+    } catch (err) {
+        console.error('GET /api/notifications error:', err.message);
+        res.status(200).json([]);
+    }
+});
+
 // =======================================================
 // UPDATE APPLICATION STATUS
 // =======================================================
@@ -596,7 +681,7 @@ app.get('/applications', async (req, res) => {
 app.put('/applications/:id/status', async (req, res) => {
 
     const { id } = req.params;
-    const { status } = req.body;
+    const { status, rejectionReason } = req.body;
 
     const allowedStatuses = [
         'Pending',
@@ -605,88 +690,114 @@ app.put('/applications/:id/status', async (req, res) => {
     ];
 
     if (!allowedStatuses.includes(status)) {
-
         return res.status(400).json({
             error: 'Invalid application status'
         });
-
     }
 
     try {
-
-        const result =
-            await pool.query(
+        // Try update with rejection_reason if column exists; fallback to status only
+        let result;
+        try {
+            result = await pool.query(
+                `
+                UPDATE submitted_programs
+                SET status = $1,
+                    rejection_reason = CASE
+                        WHEN $1 = 'Rejected' THEN COALESCE($3, rejection_reason)
+                        ELSE rejection_reason
+                    END
+                WHERE id = $2
+                RETURNING *
+                `,
+                [status, id, rejectionReason || null]
+            );
+        } catch (colErr) {
+            // Column may not exist — status only
+            result = await pool.query(
                 `
                 UPDATE submitted_programs
                 SET status = $1
                 WHERE id = $2
                 RETURNING *
                 `,
-                [
-                    status,
-                    id
-                ]
+                [status, id]
             );
-
-        if (result.rows.length === 0) {
-
-            return res.status(404).json({
-                error:
-                    'Application not found'
-            });
-
         }
 
-        const updatedApplication =
-            result.rows[0];
+        if (result.rows.length === 0) {
+            return res.status(404).json({
+                error: 'Application not found'
+            });
+        }
 
-        console.log(
-            `Application ${id} status changed to ${status}`
-        );
+        const updatedApplication = result.rows[0];
 
-        // Realtime update for Admin Dashboard
-        io.emit(
-            'applicationStatusUpdated',
-            updatedApplication
-        );
+        console.log(`Application ${id} status changed to ${status}`);
 
-        // Existing event naming compatibility
-        io.emit(
-            'application_status_updated',
-            {
-                userId:
-                    updatedApplication.user_id,
+        io.emit('applicationStatusUpdated', updatedApplication);
+        io.emit('application_updated', updatedApplication);
+        io.emit('application_status_updated', {
+            userId: updatedApplication.user_id,
+            applicationId: updatedApplication.id,
+            status: updatedApplication.status
+        });
 
-                applicationId:
-                    updatedApplication.id,
+        // Optional email notification (Gmail transporter) — does not block response
+        const applicantEmail = updatedApplication.email;
+        if (applicantEmail && process.env.EMAIL_USER && process.env.EMAIL_PASS) {
+            const subject =
+                status === 'Approved'
+                    ? 'Tugon EduAssist — Application Approved'
+                    : status === 'Rejected'
+                        ? 'Tugon EduAssist — Application Update'
+                        : `Tugon EduAssist — Status: ${status}`;
 
-                status:
-                    updatedApplication.status
-            }
-        );
+            const body =
+                status === 'Approved'
+                    ? `Hello ${updatedApplication.first_name || ''},
+
+Your Educational Assistance application has been APPROVED.
+
+Please check your Tugon dashboard for next steps.
+
+— Tugon EduAssist Team`
+                    : status === 'Rejected'
+                        ? `Hello ${updatedApplication.first_name || ''},
+
+Your application status is now: Rejected.
+${rejectionReason ? 'Reason: ' + rejectionReason + '\n' : ''}
+Please check your dashboard or contact the office for assistance.
+
+— Tugon EduAssist Team`
+                        : `Hello ${updatedApplication.first_name || ''},
+
+Your application status is now: ${status}.
+
+— Tugon EduAssist Team`;
+
+            transporter.sendMail({
+                from: process.env.EMAIL_USER,
+                to: applicantEmail,
+                subject,
+                text: body
+            }).then(() => {
+                console.log('Status email sent to', applicantEmail);
+            }).catch(mailErr => {
+                console.warn('Status email failed:', mailErr.message);
+            });
+        }
 
         res.status(200).json({
-
-            message:
-                'Application status updated successfully',
-
-            application:
-                updatedApplication
-
+            message: 'Application status updated successfully',
+            application: updatedApplication
         });
 
     } catch (err) {
-
-        console.error(
-            'Error updating application status:',
-            err.message
-        );
-
+        console.error('Error updating application status:', err.message);
         res.status(500).json({
-            error:
-                'Failed to update application status'
+            error: 'Failed to update application status'
         });
-
     }
 
 });
@@ -1415,51 +1526,6 @@ app.post(
 
 
 // RECENT SUBMISSIONS
-
-app.get('/api/recent-submissions', async (req, res) => {
-
-    try {
-
-        const result =
-            await pool.query(
-                `
-                SELECT
-                    id,
-                    CONCAT(
-                        first_name,
-                        ' ',
-                        last_name
-                    ) AS applicant,
-                    municipality,
-                    program_type AS program,
-                    status
-                FROM submitted_programs
-                ORDER BY id DESC
-                LIMIT 5
-                `
-            );
-
-        res.status(200).json(
-            result.rows
-        );
-
-    } catch (err) {
-
-        console.error(
-            "Error fetching recent submissions:",
-            err.message
-        );
-
-        res.status(500).json({
-            error:
-                "Failed to fetch recent submissions"
-        });
-
-    }
-
-});
-
-// RECENT SUBMISSIONS
 app.get('/api/recent-submissions', async (req, res) => {
     try {
         const result = await pool.query(
@@ -1489,22 +1555,9 @@ app.get('/api/recent-submissions', async (req, res) => {
 // =======================================================
 // --- 9. SERVER START ---
 // =======================================================
-const PORT = process.env.PORT || 5000;
+// --- SERVER START (single listener only) ---
+const PORT = process.env.PORT || 10000;
 
 server.listen(PORT, () => {
-    console.log(`Server is running on port ${PORT}`);
+    console.log(`Server running on port ${PORT}`);
 });
-
-// --- SERVER START ---
-
-const PORT =
-    process.env.PORT || 10000;
-
-server.listen(
-    PORT,
-    () => {
-        console.log(
-            `Server running on port ${PORT}`
-        );
-    }
-);
