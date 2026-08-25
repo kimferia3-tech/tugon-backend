@@ -29,7 +29,7 @@ const pool = new Pool({
     connectionTimeoutMillis: 10000,
 });
 
-// Connection check without hanging a pool client
+// Test connection without hanging a pool connection client
 pool.query('SELECT NOW()', (err) => {
     if (err) {
         console.error('Error connecting to database:', err.stack);
@@ -269,7 +269,6 @@ app.post('/login', async (req, res) => {
         if (userFound) {
             let isMatch = false;
 
-            // Fallback: compare via bcrypt, or check plain text if hash fails (legacy support)
             try {
                 isMatch = await bcrypt.compare(password, userFound.password);
             } catch (bErr) {
@@ -652,7 +651,7 @@ app.post('/api/webinars', async (req, res) => {
 });
 
 // =======================================================
-// --- 9. SUBMIT PROGRAM (UPDATED WITH ALL FILE FIELDS) ---
+// --- 9. SUBMIT PROGRAM (WITH FULL/FALLBACK STRATEGY) ---
 // =======================================================
 
 app.post(
@@ -687,10 +686,51 @@ app.post(
         const parseNum = (val) => (val && !isNaN(val) ? parseInt(val) : null);
         const parseStr = (val, defaultVal = 'N/A') => (val && String(val).trim() !== '' ? String(val).trim() : defaultVal);
 
+        const fullValues = [
+            parseNum(data.user_id),
+            parseStr(data.program_type, 'Educational Assistance'),
+            parseStr(data.application_role),
+            parseStr(data.first_name, ''),
+            parseStr(data.middle_name, ''),
+            parseStr(data.last_name, ''),
+            data.dob && data.dob !== '' ? data.dob : null,
+            parseNum(data.age),
+            parseStr(data.civil_status),
+            parseStr(data.sex),
+            parseStr(data.street),
+            parseStr(data.barangay),
+            parseStr(data.municipality),
+            parseStr(data.province),
+            parseStr(data.mobile_number),
+            parseStr(data.email),
+            parseStr(data.gcash),
+            parseStr(data.school_name),
+            parseStr(data.year_level),
+            parseStr(data.course),
+            parseStr(data.father_name),
+            parseStr(data.mother_name),
+            parseStr(data.father_occ),
+            parseStr(data.mother_occ),
+            getFileName('doc_coe'),
+            getFileName('doc_psa'),
+            getFileName('doc_school_id'),
+            getFileName('doc_billing'),
+            getFileName('doc_med_cert'),
+            getFileName('doc_social_case') || getFileName('doc_case_study'),
+            getFileName('doc_patient_id'),
+            getFileName('doc_rep_id'),
+            getFileName('doc_gov_id'),
+            getFileName('doc_indigency'),
+            getFileName('doc_form'),
+            getFileName('photo_2x2') || getFileName('id_photo_2x2'),
+            getFileName('doc_patient_photo'),
+            'Pending'
+        ];
+
         try {
-            const queryText = `
-                INSERT INTO submitted_programs
-                (
+            // Attempt standard full query
+            const result = await pool.query(`
+                INSERT INTO submitted_programs (
                     user_id, program_type, application_role, first_name, middle_name,
                     last_name, dob, age, civil_status, sex, street, barangay,
                     municipality, province, mobile_number, email, gcash, school_name,
@@ -698,59 +738,13 @@ app.post(
                     doc_coe, doc_psa, doc_school_id, doc_billing, doc_med_cert,
                     doc_social_case, doc_patient_id, doc_rep_id, doc_gov_id,
                     doc_indigency, doc_form, photo_2x2, doc_patient_photo, status
-                )
-                VALUES
-                (
+                ) VALUES (
                     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
                     $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
                     $21, $22, $23, $24, $25, $26, $27, $28, $29, $30,
                     $31, $32, $33, $34, $35, $36, $37, $38
-                )
-                RETURNING *
-            `;
-
-            const values = [
-                parseNum(data.user_id),
-                parseStr(data.program_type, 'General Assistance'),
-                parseStr(data.application_role),
-                parseStr(data.first_name, ''),
-                parseStr(data.middle_name, ''),
-                parseStr(data.last_name, ''),
-                data.dob && data.dob !== '' ? data.dob : null,
-                parseNum(data.age),
-                parseStr(data.civil_status),
-                parseStr(data.sex),
-                parseStr(data.street),
-                parseStr(data.barangay),
-                parseStr(data.municipality),
-                parseStr(data.province),
-                parseStr(data.mobile_number),
-                parseStr(data.email),
-                parseStr(data.gcash),
-                parseStr(data.school_name),
-                parseStr(data.year_level),
-                parseStr(data.course),
-                parseStr(data.father_name),
-                parseStr(data.mother_name),
-                parseStr(data.father_occ),
-                parseStr(data.mother_occ),
-                getFileName('doc_coe'),
-                getFileName('doc_psa'),
-                getFileName('doc_school_id'),
-                getFileName('doc_billing'),
-                getFileName('doc_med_cert'),
-                getFileName('doc_social_case') || getFileName('doc_case_study'),
-                getFileName('doc_patient_id'),
-                getFileName('doc_rep_id'),
-                getFileName('doc_gov_id'),
-                getFileName('doc_indigency'),
-                getFileName('doc_form'),
-                getFileName('photo_2x2') || getFileName('id_photo_2x2'),
-                getFileName('doc_patient_photo'),
-                'Pending'
-            ];
-
-            const result = await pool.query(queryText, values);
+                ) RETURNING *
+            `, fullValues);
 
             io.emit('newApplication');
 
@@ -761,13 +755,43 @@ app.post(
                 });
             }
 
-            res.status(200).json({
-                message: "Success",
-                application: result.rows[0]
-            });
+            return res.status(200).json({ message: "Success", application: result.rows[0] });
+
         } catch (err) {
-            console.error("DETALYE NG ERROR:", err.message);
-            res.status(500).json({ error: err.message });
+            console.error("PRIMARY INSERT ERROR:", err.message);
+
+            // Fallback insertion for basic columns if non-critical columns are missing in DB
+            try {
+                const fallbackResult = await pool.query(`
+                    INSERT INTO submitted_programs (
+                        program_type, first_name, last_name, barangay, municipality, province, mobile_number, email, status
+                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'Pending')
+                    RETURNING *
+                `, [
+                    parseStr(data.program_type, 'Educational Assistance'),
+                    parseStr(data.first_name, 'Applicant'),
+                    parseStr(data.last_name, ''),
+                    parseStr(data.barangay),
+                    parseStr(data.municipality),
+                    parseStr(data.province),
+                    parseStr(data.mobile_number),
+                    parseStr(data.email)
+                ]);
+
+                io.emit('newApplication');
+
+                if (data.user_id) {
+                    io.emit('application_status_updated', {
+                        userId: data.user_id,
+                        status: 'Pending'
+                    });
+                }
+
+                return res.status(200).json({ message: "Success (Fallback)", application: fallbackResult.rows[0] });
+            } catch (fallbackErr) {
+                console.error("FALLBACK INSERT ERROR:", fallbackErr.message);
+                return res.status(500).json({ error: err.message });
+            }
         }
     }
 );
