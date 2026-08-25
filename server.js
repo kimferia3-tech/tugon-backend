@@ -684,6 +684,9 @@ app.post(
                 ? req.files[fieldName][0].filename
                 : null;
 
+        const parseNum = (val) => (val && !isNaN(val) ? parseInt(val) : null);
+        const parseStr = (val, defaultVal = 'N/A') => (val && String(val).trim() !== '' ? String(val).trim() : defaultVal);
+
         try {
             const queryText = `
                 INSERT INTO submitted_programs
@@ -707,30 +710,30 @@ app.post(
             `;
 
             const values = [
-                data.user_id || null,
-                data.program_type,
-                data.application_role || 'N/A',
-                data.first_name,
-                data.middle_name || '',
-                data.last_name,
-                data.dob || null,
-                data.age ? parseInt(data.age) : null,
-                data.civil_status,
-                data.sex,
-                data.street,
-                data.barangay,
-                data.municipality,
-                data.province,
-                data.mobile_number,
-                data.email,
-                data.gcash || 'N/A',
-                data.school_name || 'N/A',
-                data.year_level || 'N/A',
-                data.course || 'N/A',
-                data.father_name || 'N/A',
-                data.mother_name || 'N/A',
-                data.father_occ || 'N/A',
-                data.mother_occ || 'N/A',
+                parseNum(data.user_id),
+                parseStr(data.program_type, 'General Assistance'),
+                parseStr(data.application_role),
+                parseStr(data.first_name, ''),
+                parseStr(data.middle_name, ''),
+                parseStr(data.last_name, ''),
+                data.dob && data.dob !== '' ? data.dob : null,
+                parseNum(data.age),
+                parseStr(data.civil_status),
+                parseStr(data.sex),
+                parseStr(data.street),
+                parseStr(data.barangay),
+                parseStr(data.municipality),
+                parseStr(data.province),
+                parseStr(data.mobile_number),
+                parseStr(data.email),
+                parseStr(data.gcash),
+                parseStr(data.school_name),
+                parseStr(data.year_level),
+                parseStr(data.course),
+                parseStr(data.father_name),
+                parseStr(data.mother_name),
+                parseStr(data.father_occ),
+                parseStr(data.mother_occ),
                 getFileName('doc_coe'),
                 getFileName('doc_psa'),
                 getFileName('doc_school_id'),
