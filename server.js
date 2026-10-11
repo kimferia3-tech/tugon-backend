@@ -291,7 +291,6 @@ app.get('/applications', async (req, res) => {
         const result = await pool.query(
             `
             SELECT *,
-            COALESCE(gcash, phone, mobile_number, CONCAT('0930000', id)) AS gcash_number,
             TO_CHAR(submitted_at, 'Mon DD, YYYY') AS date
             FROM submitted_programs
             ORDER BY id DESC
@@ -312,7 +311,6 @@ app.get('/api/applications', async (req, res) => {
             result = await pool.query(
                 `
                 SELECT *,
-                COALESCE(gcash, phone, mobile_number, CONCAT('0930000', id)) AS gcash_number,
                 TO_CHAR(submitted_at, 'Mon DD, YYYY') AS date
                 FROM submitted_programs
                 WHERE LOWER(TRIM(email)) = $1
@@ -324,7 +322,6 @@ app.get('/api/applications', async (req, res) => {
             result = await pool.query(
                 `
                 SELECT *,
-                COALESCE(gcash, phone, mobile_number, CONCAT('0930000', id)) AS gcash_number,
                 TO_CHAR(submitted_at, 'Mon DD, YYYY') AS date
                 FROM submitted_programs
                 ORDER BY id DESC
@@ -344,7 +341,6 @@ app.get('/api/applications/user/:userId', async (req, res) => {
         const result = await pool.query(
             `
             SELECT *,
-            COALESCE(gcash, phone, mobile_number, CONCAT('0930000', id)) AS gcash_number,
             TO_CHAR(submitted_at, 'Mon DD, YYYY') AS date
             FROM submitted_programs
             WHERE user_id::text = $1
@@ -407,7 +403,7 @@ app.put('/applications/:id/status', async (req, res) => {
                         ELSE rejection_reason
                     END
                 WHERE id = $2
-                RETURNING *, COALESCE(gcash, phone, mobile_number, CONCAT('0930000', id)) AS gcash_number
+                RETURNING *
                 `,
                 [status, id, rejectionReason || null]
             );
@@ -417,7 +413,7 @@ app.put('/applications/:id/status', async (req, res) => {
                 UPDATE submitted_programs
                 SET status = $1
                 WHERE id = $2
-                RETURNING *, COALESCE(gcash, phone, mobile_number, CONCAT('0930000', id)) AS gcash_number
+                RETURNING *
                 `,
                 [status, id]
             );
@@ -476,9 +472,8 @@ app.put('/applications/:id/status', async (req, res) => {
 });
 
 app.post('/applications', async (req, res) => {
-    const { fullName, full_name, municipality, barangay, program, phone, gcash } = req.body;
+    const { fullName, full_name, municipality, barangay, program, phone } = req.body;
     const applicantName = fullName || full_name;
-    const applicantGcash = gcash || phone || '09300001420';
 
     try {
         const queryText = `
@@ -486,7 +481,7 @@ app.post('/applications', async (req, res) => {
             VALUES ($1, $2, $3, $4, $5, 'Pending')
             RETURNING *;
         `;
-        const values = [applicantName, municipality, barangay, program, applicantGcash];
+        const values = [applicantName, municipality, barangay, program, phone];
         const result = await pool.query(queryText, values);
 
         io.emit('newApplication', result.rows[0]);
@@ -726,7 +721,7 @@ app.post(
                     $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
                     $21, $22, $23, $24, $25, $26, $27, $28, $29, $30,
                     $31, $32, $33, $34, $35, $36, $37, $38
-                ) RETURNING *, COALESCE(gcash, phone, mobile_number, CONCAT('0930000', id)) AS gcash_number
+                ) RETURNING *
             `, fullValues);
 
             io.emit('newApplication');
@@ -748,7 +743,7 @@ app.post(
                     INSERT INTO submitted_programs (
                         program_type, first_name, last_name, barangay, municipality, province, mobile_number, email, status
                     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'Pending')
-                    RETURNING *, COALESCE(gcash, phone, mobile_number, CONCAT('0930000', id)) AS gcash_number
+                    RETURNING *
                 `, [
                     parseStr(data.program_type, 'Educational Assistance'),
                     parseStr(data.first_name, 'Applicant'),
@@ -788,7 +783,6 @@ app.get('/api/recent-submissions', async (req, res) => {
                 CONCAT(first_name, ' ', last_name) AS full_name,
                 program_type,
                 status,
-                COALESCE(gcash, phone, mobile_number, CONCAT('0930000', id)) AS gcash_number,
                 TO_CHAR(submitted_at, 'Mon DD, YYYY HH:MI AM') AS date
             FROM submitted_programs
             ORDER BY id DESC
