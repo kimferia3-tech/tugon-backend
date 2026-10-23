@@ -8,6 +8,27 @@ const multer = require('multer');
 const bcrypt = require('bcryptjs');
 const axios = require('axios');
 const nodemailer = require('nodemailer');
+const fs = require('fs');
+// Optional: Cloudinary for permanent file storage on Render
+// npm install cloudinary
+let cloudinary = null;
+try {
+    cloudinary = require('cloudinary').v2;
+    if (process.env.CLOUDINARY_CLOUD_NAME && process.env.CLOUDINARY_API_KEY && process.env.CLOUDINARY_API_SECRET) {
+        cloudinary.config({
+            cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+            api_key: process.env.CLOUDINARY_API_KEY,
+            api_secret: process.env.CLOUDINARY_API_SECRET
+        });
+        console.log('Cloudinary configured — uploads will be permanent.');
+    } else {
+        cloudinary = null;
+        console.warn('Cloudinary env vars missing — falling back to local ./uploads (ephemeral on Render).');
+    }
+} catch (e) {
+    console.warn('cloudinary package not installed — using local ./uploads only.');
+    cloudinary = null;
+}
 
 const app = express();
 const server = http.createServer(app);
@@ -48,8 +69,15 @@ const transporter = nodemailer.createTransport({
 });
 
 // --- 2. MULTER CONFIG ---
+// Ensure local uploads folder exists (fallback / local dev)
+const UPLOAD_DIR = path.join(__dirname, 'uploads');
+if (!fs.existsSync(UPLOAD_DIR)) {
+    fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+}
+
+// Always store on disk first; if Cloudinary is configured we upload then replace with secure URL
 const storage = multer.diskStorage({
-    destination: './uploads/',
+    destination: UPLOAD_DIR,
     filename: (req, file, cb) => {
         cb(
             null,
@@ -58,13 +86,40 @@ const storage = multer.diskStorage({
     }
 });
 
-const upload = multer({ storage: storage });
+const upload = multer({
+    storage,
+    limits: { fileSize: 10 * 1024 * 1024 } // 10MB
+});
+
+/** Upload one local file to Cloudinary; returns secure_url or local filename */
+async function persistFile(localFilename) {
+    if (!localFilename) return null;
+    const localPath = path.join(UPLOAD_DIR, localFilename);
+    if (!cloudinary) {
+        // Keep local filename — served via /uploads
+        return localFilename;
+    }
+    try {
+        const result = await cloudinary.uploader.upload(localPath, {
+            folder: 'tugon-eduassist',
+            resource_type: 'auto',
+            use_filename: true,
+            unique_filename: true
+        });
+        // Remove local copy after successful cloud upload
+        try { fs.unlinkSync(localPath); } catch (_) {}
+        return result.secure_url; // full https URL saved in DB
+    } catch (err) {
+        console.error('Cloudinary upload failed, keeping local file:', err.message);
+        return localFilename;
+    }
+}
 
 // --- 3. MIDDLEWARES ---
 app.use(cors());
 app.use(express.json());
 app.use(express.static(__dirname));
-app.use('/uploads', express.static('uploads'));
+app.use('/uploads', express.static(UPLOAD_DIR));
 
 // =======================================================
 // --- 4. SOCKET.IO CHAT LOGIC ---
@@ -657,13 +712,30 @@ app.post(
     async (req, res) => {
         const data = req.body;
 
-        const getFileName = (fieldName) =>
+        const getLocalName = (fieldName) =>
             (req.files && req.files[fieldName])
                 ? req.files[fieldName][0].filename
                 : null;
 
         const parseNum = (val) => (val && !isNaN(val) ? parseInt(val) : null);
         const parseStr = (val, defaultVal = 'N/A') => (val && String(val).trim() !== '' ? String(val).trim() : defaultVal);
+
+        // Persist each file to Cloudinary (or keep local filename)
+        const fileFields = {
+            doc_coe: await persistFile(getLocalName('doc_coe')),
+            doc_psa: await persistFile(getLocalName('doc_psa')),
+            doc_school_id: await persistFile(getLocalName('doc_school_id')),
+            doc_billing: await persistFile(getLocalName('doc_billing')),
+            doc_med_cert: await persistFile(getLocalName('doc_med_cert')),
+            doc_social_case: await persistFile(getLocalName('doc_social_case') || getLocalName('doc_case_study')),
+            doc_patient_id: await persistFile(getLocalName('doc_patient_id')),
+            doc_rep_id: await persistFile(getLocalName('doc_rep_id')),
+            doc_gov_id: await persistFile(getLocalName('doc_gov_id')),
+            doc_indigency: await persistFile(getLocalName('doc_indigency')),
+            doc_form: await persistFile(getLocalName('doc_form')),
+            photo_2x2: await persistFile(getLocalName('photo_2x2') || getLocalName('id_photo_2x2')),
+            doc_patient_photo: await persistFile(getLocalName('doc_patient_photo'))
+        };
 
         const fullValues = [
             parseNum(data.user_id),
@@ -690,19 +762,19 @@ app.post(
             parseStr(data.mother_name),
             parseStr(data.father_occ),
             parseStr(data.mother_occ),
-            getFileName('doc_coe'),
-            getFileName('doc_psa'),
-            getFileName('doc_school_id'),
-            getFileName('doc_billing'),
-            getFileName('doc_med_cert'),
-            getFileName('doc_social_case') || getFileName('doc_case_study'),
-            getFileName('doc_patient_id'),
-            getFileName('doc_rep_id'),
-            getFileName('doc_gov_id'),
-            getFileName('doc_indigency'),
-            getFileName('doc_form'),
-            getFileName('photo_2x2') || getFileName('id_photo_2x2'),
-            getFileName('doc_patient_photo'),
+            fileFields.doc_coe,
+            fileFields.doc_psa,
+            fileFields.doc_school_id,
+            fileFields.doc_billing,
+            fileFields.doc_med_cert,
+            fileFields.doc_social_case,
+            fileFields.doc_patient_id,
+            fileFields.doc_rep_id,
+            fileFields.doc_gov_id,
+            fileFields.doc_indigency,
+            fileFields.doc_form,
+            fileFields.photo_2x2,
+            fileFields.doc_patient_photo,
             'Pending'
         ];
 
