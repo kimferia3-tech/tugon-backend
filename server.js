@@ -107,7 +107,7 @@ async function persistFile(localFilename) {
             unique_filename: true
         });
         // Remove local copy after successful cloud upload
-        try { fs.unlinkSync(localPath); } catch (_) {}
+        try { fs.unlinkSync(localPath); } catch (_) { }
         return result.secure_url; // full https URL saved in DB
     } catch (err) {
         console.error('Cloudinary upload failed, keeping local file:', err.message);
@@ -695,6 +695,7 @@ app.post(
         { name: 'id_photo_2x2', maxCount: 1 },
         { name: 'doc_coe', maxCount: 1 },
         { name: 'doc_psa', maxCount: 1 },
+        { name: 'doc_report_card', maxCount: 1 },
         { name: 'doc_school_id', maxCount: 1 },
         { name: 'doc_form', maxCount: 1 },
         { name: 'doc_billing', maxCount: 1 },
@@ -724,6 +725,7 @@ app.post(
         const fileFields = {
             doc_coe: await persistFile(getLocalName('doc_coe')),
             doc_psa: await persistFile(getLocalName('doc_psa')),
+            doc_report_card: await persistFile(getLocalName('doc_report_card')),
             doc_school_id: await persistFile(getLocalName('doc_school_id')),
             doc_billing: await persistFile(getLocalName('doc_billing')),
             doc_med_cert: await persistFile(getLocalName('doc_med_cert')),
@@ -764,6 +766,7 @@ app.post(
             parseStr(data.mother_occ),
             fileFields.doc_coe,
             fileFields.doc_psa,
+            fileFields.doc_report_card,
             fileFields.doc_school_id,
             fileFields.doc_billing,
             fileFields.doc_med_cert,
@@ -785,14 +788,14 @@ app.post(
                     last_name, dob, age, civil_status, sex, street, barangay,
                     municipality, province, mobile_number, email, gcash, school_name,
                     year_level, course, father_name, mother_name, father_occ, mother_occ,
-                    doc_coe, doc_psa, doc_school_id, doc_billing, doc_med_cert,
+                    doc_coe, doc_psa, doc_report_card, doc_school_id, doc_billing, doc_med_cert,
                     doc_social_case, doc_patient_id, doc_rep_id, doc_gov_id,
                     doc_indigency, doc_form, photo_2x2, doc_patient_photo, status
                 ) VALUES (
                     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
                     $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
                     $21, $22, $23, $24, $25, $26, $27, $28, $29, $30,
-                    $31, $32, $33, $34, $35, $36, $37, $38
+                    $31, $32, $33, $34, $35, $36, $37, $38, $39
                 ) RETURNING *
             `, fullValues);
 
