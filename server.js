@@ -9,8 +9,8 @@ const bcrypt = require('bcryptjs');
 const axios = require('axios');
 const nodemailer = require('nodemailer');
 const fs = require('fs');
-
 // Optional: Cloudinary for permanent file storage on Render
+// npm install cloudinary
 let cloudinary = null;
 try {
     cloudinary = require('cloudinary').v2;
@@ -50,7 +50,7 @@ const pool = new Pool({
     connectionTimeoutMillis: 10000,
 });
 
-// Test connection
+// Test connection without hanging a pool connection client
 pool.query('SELECT NOW()', (err) => {
     if (err) {
         console.error('Error connecting to database:', err.stack);
@@ -69,15 +69,20 @@ const transporter = nodemailer.createTransport({
 });
 
 // --- 2. MULTER CONFIG ---
+// Ensure local uploads folder exists (fallback / local dev)
 const UPLOAD_DIR = path.join(__dirname, 'uploads');
 if (!fs.existsSync(UPLOAD_DIR)) {
     fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 }
 
+// Always store on disk first; if Cloudinary is configured we upload then replace with secure URL
 const storage = multer.diskStorage({
     destination: UPLOAD_DIR,
     filename: (req, file, cb) => {
-        cb(null, file.fieldname + '-' + Date.now() + path.extname(file.originalname));
+        cb(
+            null,
+            file.fieldname + '-' + Date.now() + path.extname(file.originalname)
+        );
     }
 });
 
@@ -91,6 +96,7 @@ async function persistFile(localFilename) {
     if (!localFilename) return null;
     const localPath = path.join(UPLOAD_DIR, localFilename);
     if (!cloudinary) {
+        // Keep local filename — served via /uploads
         return localFilename;
     }
     try {
@@ -100,8 +106,9 @@ async function persistFile(localFilename) {
             use_filename: true,
             unique_filename: true
         });
+        // Remove local copy after successful cloud upload
         try { fs.unlinkSync(localPath); } catch (_) { }
-        return result.secure_url;
+        return result.secure_url; // full https URL saved in DB
     } catch (err) {
         console.error('Cloudinary upload failed, keeping local file:', err.message);
         return localFilename;
@@ -331,74 +338,66 @@ app.post('/login', async (req, res) => {
 });
 
 // =======================================================
-// VERIFY LOGGED-IN USER (used by application form)
+// --- 6. APPLICATIONS / SUBMITTED PROGRAMS ---
+// =======================================================
+// =======================================================
+// --- GET CURRENT USER (/api/me) ---
 // =======================================================
 app.get('/api/me', async (req, res) => {
     try {
-        const userId = String(req.query.userId || req.query.id || '').trim();
-        const email  = String(req.query.email || '').trim().toLowerCase();
+        const userId = String(req.query.userId || '').trim();
+        const email = String(req.query.email || '').trim().toLowerCase();
 
         if (!userId && !email) {
-            return res.status(400).json({ error: 'userId or email is required' });
+            return res.status(400).json({ error: 'userId or email required' });
         }
 
-        let user = null;
+        let result;
 
         // Try users table first
         if (userId) {
-            const r = await pool.query(
-                `SELECT id, fullname, email, role FROM users WHERE id::text = $1 LIMIT 1`,
+            result = await pool.query(
+                `SELECT id, fullname, email, role FROM users WHERE id::text = $1`,
                 [userId]
             );
-            user = r.rows[0] || null;
-        }
-
-        if (!user && email) {
-            const r = await pool.query(
-                `SELECT id, fullname, email, role FROM users WHERE LOWER(TRIM(email)) = $1 LIMIT 1`,
+        } else {
+            result = await pool.query(
+                `SELECT id, fullname, email, role FROM users WHERE LOWER(TRIM(email)) = $1`,
                 [email]
             );
-            user = r.rows[0] || null;
         }
 
-        // Also check admins table
-        if (!user) {
+        // Fallback to admins table
+        if (result.rows.length === 0) {
             if (userId) {
-                const r = await pool.query(
-                    `SELECT id, full_name AS fullname, email, 'admin' AS role FROM admins WHERE id::text = $1 LIMIT 1`,
+                result = await pool.query(
+                    `SELECT id, full_name AS fullname, email, 'admin' AS role FROM admins WHERE id::text = $1`,
                     [userId]
                 );
-                user = r.rows[0] || null;
-            }
-            if (!user && email) {
-                const r = await pool.query(
-                    `SELECT id, full_name AS fullname, email, 'admin' AS role FROM admins WHERE LOWER(TRIM(email)) = $1 LIMIT 1`,
+            } else {
+                result = await pool.query(
+                    `SELECT id, full_name AS fullname, email, 'admin' AS role FROM admins WHERE LOWER(TRIM(email)) = $1`,
                     [email]
                 );
-                user = r.rows[0] || null;
             }
         }
 
-        if (!user) {
-            return res.status(401).json({ error: 'User not found or session invalid' });
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'User not found' });
         }
 
-        res.json({
+        const user = result.rows[0];
+        res.status(200).json({
             id: user.id,
-            fullname: user.fullname || user.full_name || '',
+            fullname: user.fullname,
             email: user.email,
-            role: (user.role || 'user').toLowerCase()
+            role: user.role || 'user'
         });
     } catch (err) {
-        console.error('GET /api/me error:', err.message);
+        console.error('/api/me error:', err.message);
         res.status(500).json({ error: 'Server error' });
     }
 });
-
-// =======================================================
-// --- 6. APPLICATIONS / SUBMITTED PROGRAMS ---
-// =======================================================
-
 app.get('/applications', async (req, res) => {
     try {
         const result = await pool.query(
