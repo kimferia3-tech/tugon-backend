@@ -657,7 +657,7 @@ app.post('/api/settings', async (req, res) => {
         `;
         const values = [
             standardAmount || 3000.00,
-            totalFunds || 100000.00,
+            totalFunds || 150000.00,
             autoApproval || 'Disabled',
             emailNotifications || 'Enabled'
         ];
